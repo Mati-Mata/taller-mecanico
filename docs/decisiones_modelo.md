@@ -136,7 +136,10 @@ cancela por estado; una factura y un pago se anulan conservando el registro.
   independiente: se deriva de un pago `registrado`.
 - Pago: `registrado`, `anulado`.
 - Disponibilidad de mecánico: `disponible`, `no_disponible`.
-- Eliminación lógica: columna booleana `activo` (`1` activo, `0` inactivo).
+- Los indicadores booleanos `activo` e `inventario_descontado` se almacenan
+  como `TINYINT UNSIGNED`. En `03_constraints.sql` se limitarán a los valores
+  0 y 1 mediante restricciones `CHECK IN (0, 1)`.
+- Eliminación lógica: `activo = 1` representa activo y `activo = 0`, inactivo.
 
 Las transiciones de orden se detallan en `reglas_negocio.md`. La disponibilidad
 manual del mecánico y su límite de órdenes activas se validarán conjuntamente.

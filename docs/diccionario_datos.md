@@ -11,7 +11,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `id_rol` | `INT UNSIGNED` | No | Autonumérico | Sí | — | Sí | Mayor que cero | Identificador. |
 | `nombre` | `VARCHAR(30)` | No | — | No | — | Sí | Valores iniciales: administrador, asesor, mecanico | Nombre funcional. |
 | `descripcion` | `VARCHAR(255)` | Sí | `NULL` | No | — | No | — | Explicación del rol. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Permite nuevas asignaciones. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Permite nuevas asignaciones. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta del registro. |
 
 - **Propósito:** catálogo de roles.
@@ -34,7 +34,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `apellidos` | `VARCHAR(100)` | No | — | No | — | No | No vacío | Apellidos personales. |
 | `correo` | `VARCHAR(254)` | No | — | No | — | Sí | Formato básico, validación completa en aplicación | Correo de la cuenta. |
 | `telefono` | `VARCHAR(20)` | Sí | `NULL` | No | — | No | No vacío si se informa | Teléfono del usuario. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Habilitación lógica. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Habilitación lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta de cuenta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 | `fecha_desactivacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con `activo` | Momento de desactivación. |
@@ -58,7 +58,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `nivel` | `VARCHAR(20)` | No | — | No | — | No | En (junior, intermedio, senior) | Nivel técnico propuesto. |
 | `maximo_ordenes_activas` | `TINYINT UNSIGNED` | No | `3` | No | — | No | Mayor que cero | Capacidad simultánea. |
 | `disponibilidad` | `VARCHAR(20)` | No | `disponible` | No | — | No | En (disponible, no_disponible) | Disponibilidad operativa. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Vigencia del perfil. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Vigencia del perfil. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta del perfil. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 
@@ -84,7 +84,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `telefono` | `VARCHAR(20)` | No | — | No | — | No | No vacío | Contacto telefónico obligatorio. |
 | `correo` | `VARCHAR(254)` | Sí | `NULL` | No | — | No | Formato básico si se informa | Correo de contacto. |
 | `direccion` | `VARCHAR(255)` | Sí | `NULL` | No | — | No | — | Dirección. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 | `fecha_desactivacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con `activo` | Desactivación. |
@@ -109,7 +109,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `anio` | `SMALLINT UNSIGNED` | Sí | `NULL` | No | — | No | Entre 1886 y 2100 | Año modelo. |
 | `color` | `VARCHAR(40)` | Sí | `NULL` | No | — | No | — | Color. |
 | `kilometraje_actual` | `INT UNSIGNED` | No | `0` | No | — | No | Mayor o igual a cero | Último kilometraje confirmado. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 | `fecha_desactivacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con `activo` | Desactivación. |
@@ -134,7 +134,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `categoria` | `VARCHAR(60)` | Sí | `NULL` | No | — | No | No vacía si se informa | Clasificación libre del servicio. |
 | `duracion_estimada_minutos` | `SMALLINT UNSIGNED` | Sí | `NULL` | No | — | No | Mayor que cero si se informa | Duración estimada. |
 | `descripcion` | `TEXT` | Sí | `NULL` | No | — | No | — | Detalle funcional. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 
@@ -157,7 +157,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `stock_actual` | `DECIMAL(12,2)` | No | `0.00` | No | — | No | Mayor o igual a cero | Existencia disponible. |
 | `stock_minimo` | `DECIMAL(12,2)` | No | `0.00` | No | — | No | Mayor o igual a cero | Umbral informativo de reposición. |
 | `unidad_medida` | `VARCHAR(20)` | No | — | No | — | No | No vacía | Unidad aplicable a stock y cantidades. |
-| `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
+| `activo` | `TINYINT UNSIGNED` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 
@@ -208,7 +208,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `diagnostico` | `TEXT` | Sí | `NULL` | No | — | No | — | Diagnóstico técnico. |
 | `observacion` | `TEXT` | Sí | `NULL` | No | — | No | — | Notas generales. |
 | `kilometraje_ingreso` | `INT UNSIGNED` | No | — | No | — | No | Mayor o igual al kilometraje actual al crear | Kilometraje recibido. |
-| `inventario_descontado` | `TINYINT(1)` | No | `0` | No | — | No | En (0, 1); 1 solo si finalizada | Guardia idempotente. |
+| `inventario_descontado` | `TINYINT UNSIGNED` | No | `0` | No | — | No | En (0, 1); 1 solo si finalizada | Guardia idempotente. |
 | `fecha_apertura` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Inicio. |
 | `fecha_finalizacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con finalizada | Finalización. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
