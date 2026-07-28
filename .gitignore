@@ -1,0 +1,23 @@
+# Configuración local y credenciales
+.env
+.env.*
+*.local
+
+# Copias y archivos temporales
+*.bak
+*.tmp
+*.log
+*~
+
+# Archivos temporales de MySQL Workbench
+*.mwb.bak
+*.autosave
+*.workspace
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+.vscode/settings.json
