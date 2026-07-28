@@ -23,6 +23,17 @@ constituyen SQL.
 - **Válido:** `ana.perez` con un hash no vacío.
 - **Inválido:** repetir `ana.perez` o guardar una contraseña plana.
 
+### RN-USU-003 — Cédula única y válida en formato
+
+- **Descripción:** la cédula del usuario es obligatoria, única y contiene
+  exactamente 10 dígitos; no se valida el dígito verificador. `telefono` es
+  opcional.
+- **Tablas:** `usuario`.
+- **Momento:** alta y actualización.
+- **Mecanismo:** UNIQUE, CHECK.
+- **Válido:** cédula ficticia de 10 dígitos no registrada.
+- **Inválido:** cédula de 9 dígitos, con letras o duplicada.
+
 ### RN-MEC-001 — Perfil técnico único
 
 - **Descripción:** un usuario puede tener como máximo un perfil de mecánico y
@@ -83,6 +94,16 @@ constituyen SQL.
 - **Válido:** cambiar `activo` a 0 y registrar fecha y auditoría.
 - **Inválido:** borrar físicamente un cliente propietario de vehículos.
 
+### RN-CLI-005 — Contacto confirmado
+
+- **Descripción:** `telefono` del cliente es obligatorio; `correo` y `direccion`
+  son opcionales. No se aplica una alternativa “teléfono o correo”.
+- **Tablas:** `cliente`.
+- **Momento:** alta y actualización.
+- **Mecanismo:** NOT NULL, CHECK.
+- **Válido:** cliente con teléfono y correo nulo.
+- **Inválido:** cliente sin teléfono aunque informe correo.
+
 ## Vehículos
 
 ### RN-VEH-001 — Propietario obligatorio
@@ -113,7 +134,46 @@ constituyen SQL.
 - **Válido:** desactivar un vehículo después de finalizar su orden.
 - **Inválido:** eliminarlo físicamente y perder trazabilidad.
 
+### RN-VEH-004 — Kilometraje no negativo
+
+- **Descripción:** `kilometraje_actual` es obligatorio y nunca negativo.
+- **Tablas:** `vehiculo`.
+- **Momento:** alta y actualización.
+- **Mecanismo:** tipo `INT UNSIGNED`, CHECK conceptual.
+- **Válido:** registrar kilometraje 0 o 125000.
+- **Inválido:** registrar -1.
+
+### RN-VEH-005 — Propietario inmutable con órdenes
+
+- **Descripción:** `id_cliente` puede corregirse mientras el vehículo no tenga
+  órdenes; desde la primera orden queda inmutable. No habrá tabla de historial
+  de propietarios.
+- **Tablas:** `vehiculo`, `orden_trabajo`, `cliente`.
+- **Momento:** intento de cambio de propietario.
+- **Mecanismo:** procedimiento o trigger.
+- **Válido:** corregir propietario de un vehículo todavía sin órdenes.
+- **Inválido:** cambiarlo después de registrar una orden.
+
+### RN-VEH-006 — Año en rango fijo
+
+- **Descripción:** el año, cuando se informa, está entre 1886 y 2100.
+- **Tablas:** `vehiculo`.
+- **Momento:** alta y actualización.
+- **Mecanismo:** CHECK; una regla más estricta podrá quedar en aplicación.
+- **Válido:** año 2025.
+- **Inválido:** año 2101.
+
 ## Servicios, repuestos y precios
+
+### RN-SER-001 — Duración estimada positiva
+
+- **Descripción:** `categoria` es opcional y `duracion_estimada_minutos`, cuando
+  se informa, debe ser mayor que cero.
+- **Tablas:** `servicio`.
+- **Momento:** alta y actualización.
+- **Mecanismo:** CHECK.
+- **Válido:** servicio con categoría nula y duración 60.
+- **Inválido:** duración estimada 0.
 
 ### RN-PRE-001 — Concepto exclusivo del precio
 
@@ -174,12 +234,12 @@ constituyen SQL.
 
 ### RN-INV-001 — Stock no negativo
 
-- **Descripción:** `stock_actual` nunca puede ser menor que cero.
+- **Descripción:** `stock_actual` y `stock_minimo` nunca pueden ser negativos.
 - **Tablas:** `repuesto`.
 - **Momento:** cualquier cambio de stock.
 - **Mecanismo:** CHECK, procedimiento.
-- **Válido:** descontar 2 de un stock 5 y dejar 3.
-- **Inválido:** descontar 6 de un stock 5.
+- **Válido:** stock actual 5.00 y mínimo 2.00.
+- **Inválido:** stock mínimo -1.00 o descontar 6 de un stock 5.
 
 ### RN-INV-002 — Descuento al finalizar
 
@@ -199,6 +259,26 @@ constituyen SQL.
 - **Mecanismo:** CHECK, procedimiento con `FOR UPDATE`, trigger defensivo.
 - **Válido:** primer intento marca `inventario_descontado = 1`.
 - **Inválido:** reintento que vuelve a reducir stock.
+
+### RN-INV-004 — Stock mínimo informativo
+
+- **Descripción:** `stock_minimo` es el umbral de reposición; puede generar
+  consultas o alertas, pero no impide consumir stock disponible.
+- **Tablas:** `repuesto`.
+- **Momento:** consulta y actualización de existencias.
+- **Mecanismo:** CHECK, vista futura o aplicación.
+- **Válido:** stock actual 1.00 por debajo del mínimo 2.00, sin ser negativo.
+- **Inválido:** interpretar el mínimo como existencia físicamente reservada.
+
+### RN-INV-005 — Unidad de medida obligatoria
+
+- **Descripción:** cada repuesto tiene `unidad_medida` obligatoria y no vacía,
+  sin lista cerrada. `marca` es opcional.
+- **Tablas:** `repuesto`, `detalle_orden`.
+- **Momento:** alta y actualización de repuesto.
+- **Mecanismo:** NOT NULL, CHECK.
+- **Válido:** `litro`, `unidad` o `metro`.
+- **Inválido:** valor nulo o cadena vacía.
 
 ## Órdenes y detalles
 
@@ -221,6 +301,18 @@ constituyen SQL.
 - **Mecanismo:** valor predeterminado, procedimiento, trigger defensivo.
 - **Válido:** crear ambas filas en una transacción.
 - **Inválido:** crear una orden en `finalizada` sin historial.
+
+### RN-ORD-008 — Kilometraje de ingreso transaccional
+
+- **Descripción:** `kilometraje_ingreso` es obligatorio y no puede ser inferior
+  a `vehiculo.kilometraje_actual`. Una apertura válida crea la orden, registra
+  su historial inicial y actualiza el kilometraje actual del vehículo en la
+  misma transacción.
+- **Tablas:** `orden_trabajo`, `vehiculo`, `historial_estado_orden`.
+- **Momento:** apertura de orden y corrección mientras está `ingresada`.
+- **Mecanismo:** tipo `INT UNSIGNED`, procedimiento transaccional con bloqueo.
+- **Válido:** vehículo en 90000 y nueva orden en 90500; ambos quedan en 90500.
+- **Inválido:** vehículo en 90000 y orden en 89000, o actualizar solo una tabla.
 
 ### RN-ORD-003 — Transiciones permitidas
 
@@ -254,7 +346,8 @@ constituyen SQL.
 ### RN-ORD-006 — Cantidad y precio congelado
 
 - **Descripción:** cantidad es positiva; el precio vigente se referencia y copia,
-  y el subtotal coincide con cantidad por precio redondeado.
+  y el subtotal coincide con cantidad por precio redondeado. `observacion` es
+  opcional.
 - **Tablas:** `detalle_orden`, `historial_precio`.
 - **Momento:** alta del detalle.
 - **Mecanismo:** CHECK, FK, procedimiento.
@@ -271,6 +364,30 @@ constituyen SQL.
 - **Válido:** editar detalle mientras está en diagnóstico.
 - **Inválido:** agregar un repuesto después de finalizar.
 
+### RN-ORD-009 — Campos editables según estado
+
+- **Descripción:** `ingresada` permite mecánico, descripción del problema,
+  observación y kilometraje; `diagnostico` permite diagnóstico, mecánico,
+  observación y detalles; `esperando_repuestos` y `en_reparacion` permiten
+  diagnóstico, observación y detalles; estados terminales no permiten cambios
+  operativos.
+- **Tablas:** `orden_trabajo`, `detalle_orden`, `vehiculo`.
+- **Momento:** toda actualización operativa.
+- **Mecanismo:** procedimiento, trigger defensivo.
+- **Válido:** cambiar mecánico durante diagnóstico.
+- **Inválido:** cambiar mecánico en reparación o editar una orden finalizada.
+
+### RN-ORD-010 — Requisitos de finalización
+
+- **Descripción:** para finalizar, la orden debe estar en `en_reparacion`,
+  contener al menos un detalle, tener diagnóstico no vacío, disponer de todo el
+  inventario requerido y tener `inventario_descontado = 0`.
+- **Tablas:** `orden_trabajo`, `detalle_orden`, `repuesto`.
+- **Momento:** transición a `finalizada`.
+- **Mecanismo:** procedimiento transaccional con bloqueos, trigger defensivo.
+- **Válido:** orden diagnosticada con detalles, stock suficiente y sin descuento.
+- **Inválido:** finalizar sin detalles, sin diagnóstico, sin stock o por segunda vez.
+
 ## Facturación
 
 ### RN-FAC-001 — Una factura por orden finalizada
@@ -283,14 +400,17 @@ constituyen SQL.
 - **Válido:** emitir la primera factura de una orden finalizada.
 - **Inválido:** facturar orden en reparación o facturarla dos veces.
 
-### RN-FAC-002 — Numeración automática única
+### RN-FAC-002 — Número visible derivado
 
-- **Descripción:** el número se genera automáticamente, sin colisiones.
+- **Descripción:** no se almacena `numero_factura`. Una vista futura deriva el
+  número visible de `id_factura`, con prefijo `FAC-` y ocho dígitos, por ejemplo
+  `FAC-00000001`, mediante una expresión equivalente a
+  `CONCAT('FAC-', LPAD(id_factura, 8, '0'))`.
 - **Tablas:** `factura`.
-- **Momento:** emisión.
-- **Mecanismo:** UNIQUE, procedimiento con bloqueo.
-- **Válido:** asignar el siguiente correlativo dentro de la transacción.
-- **Inválido:** aceptar manualmente un número ya usado.
+- **Momento:** consulta.
+- **Mecanismo:** vista.
+- **Válido:** `id_factura = 1` se muestra como `FAC-00000001`.
+- **Inválido:** usar una columna almacenada, una tabla de secuencias o `MAX + 1`.
 
 ### RN-FAC-003 — Totales e IVA congelados
 
@@ -315,12 +435,13 @@ constituyen SQL.
 ### RN-FAC-005 — Instantánea e inmutabilidad
 
 - **Descripción:** detalle guarda tipo, código, descripción, cantidad, precio y
-  subtotal; una factura emitida no se edita.
+  subtotal. La cabecera copia `identificacion_cliente`, `nombre_cliente`,
+  `direccion_cliente` y `placa_vehiculo`; toda la instantánea queda inmutable.
 - **Tablas:** `factura`, `detalle_factura`, `auditoria`.
 - **Momento:** emisión e intentos posteriores.
 - **Mecanismo:** procedimiento, trigger.
-- **Válido:** cambiar luego el nombre del servicio sin afectar la factura.
-- **Inválido:** actualizar el precio de una línea emitida.
+- **Válido:** cambiar luego el cliente o placa maestros sin afectar la factura.
+- **Inválido:** actualizar la identificación o el precio en una factura emitida.
 
 ### RN-FAC-006 — Anulación conservada
 
@@ -387,11 +508,12 @@ constituyen SQL.
 ### RN-AUD-002 — Datos de auditoría
 
 - **Descripción:** cada evento identifica acción, tabla, registro, fecha y actor
-  cuando esté disponible; usa JSON para imágenes anterior/nueva.
+  cuando esté disponible; usa JSON para imágenes anterior/nueva y puede guardar
+  `motivo` para desactivaciones, anulaciones u operaciones sensibles.
 - **Tablas:** `auditoria`, `usuario`.
 - **Momento:** inserción del evento.
 - **Mecanismo:** NOT NULL, FK, trigger/procedimiento.
-- **Válido:** evento con registro afectado y JSON nuevo.
+- **Válido:** evento de anulación con registro afectado, motivo y JSON nuevo.
 - **Inválido:** evento sin acción ni tabla.
 
 ### RN-AUD-003 — Auditoría inmutable
@@ -433,4 +555,3 @@ historial en la misma transacción.
 Los maestros con eliminación lógica son `rol`, `usuario`, `mecanico`, `cliente`,
 `vehiculo`, `servicio` y `repuesto`. Desactivar no equivale a borrar ni modifica
 documentos existentes.
-

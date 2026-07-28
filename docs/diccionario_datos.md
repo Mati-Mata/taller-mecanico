@@ -27,23 +27,26 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 |---|---|---:|---|---:|---|---:|---|---|
 | `id_usuario` | `INT UNSIGNED` | No | Autonumérico | Sí | — | Sí | Mayor que cero | Identificador. |
 | `id_rol` | `INT UNSIGNED` | No | — | No | `rol.id_rol` | No | — | Rol asignado. |
+| `cedula` | `VARCHAR(10)` | No | — | No | — | Sí | Exactamente 10 dígitos | Cédula del usuario. |
 | `nombre_usuario` | `VARCHAR(60)` | No | — | No | — | Sí | Longitud mínima 3 | Identificador de acceso. |
 | `password_hash` | `VARCHAR(255)` | No | — | No | — | No | No vacío | Hash de contraseña. |
 | `nombres` | `VARCHAR(100)` | No | — | No | — | No | No vacío | Nombres personales. |
 | `apellidos` | `VARCHAR(100)` | No | — | No | — | No | No vacío | Apellidos personales. |
 | `correo` | `VARCHAR(254)` | No | — | No | — | Sí | Formato básico, validación completa en aplicación | Correo de la cuenta. |
+| `telefono` | `VARCHAR(20)` | Sí | `NULL` | No | — | No | No vacío si se informa | Teléfono del usuario. |
 | `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Habilitación lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta de cuenta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
 | `fecha_desactivacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con `activo` | Momento de desactivación. |
 
 - **Propósito:** cuentas de la aplicación, no usuarios MySQL.
-- **Claves candidatas:** `id_usuario`, `nombre_usuario`, `correo`.
+- **Claves candidatas:** `id_usuario`, `cedula`, `nombre_usuario`, `correo`.
 - **Relaciones:** N:1 con `rol`; 1:0..1 con `mecanico`; autor de operaciones.
 - **ON DELETE / ON UPDATE:** `RESTRICT` / `RESTRICT`.
 - **Índices candidatos:** `id_rol, activo`.
 - **Observaciones:** normalizar nombre de usuario y correo a minúsculas en la
-  aplicación/procedimiento; nunca almacenar contraseña plana.
+  aplicación/procedimiento; no se valida matemáticamente el dígito verificador
+  de la cédula; nunca almacenar contraseña plana.
 
 ## `mecanico`
 
@@ -78,7 +81,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `nombres` | `VARCHAR(100)` | Sí | `NULL` | No | — | No | Obligatorio solo para persona | Nombres de persona. |
 | `apellidos` | `VARCHAR(100)` | Sí | `NULL` | No | — | No | Obligatorio solo para persona | Apellidos de persona. |
 | `razon_social` | `VARCHAR(150)` | Sí | `NULL` | No | — | No | Obligatoria solo para empresa | Nombre legal empresarial. |
-| `telefono` | `VARCHAR(20)` | Sí | `NULL` | No | — | No | No vacío si se informa | Contacto telefónico. |
+| `telefono` | `VARCHAR(20)` | No | — | No | — | No | No vacío | Contacto telefónico obligatorio. |
 | `correo` | `VARCHAR(254)` | Sí | `NULL` | No | — | No | Formato básico si se informa | Correo de contacto. |
 | `direccion` | `VARCHAR(255)` | Sí | `NULL` | No | — | No | — | Dirección. |
 | `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
@@ -103,8 +106,9 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `numero_chasis` | `VARCHAR(50)` | Sí | `NULL` | No | — | Sí | No vacío si se informa | VIN/chasis. |
 | `marca` | `VARCHAR(60)` | No | — | No | — | No | No vacía | Marca. |
 | `modelo` | `VARCHAR(60)` | No | — | No | — | No | No vacío | Modelo. |
-| `anio` | `SMALLINT UNSIGNED` | Sí | `NULL` | No | — | No | Entre 1886 y año razonable futuro | Año modelo. |
+| `anio` | `SMALLINT UNSIGNED` | Sí | `NULL` | No | — | No | Entre 1886 y 2100 | Año modelo. |
 | `color` | `VARCHAR(40)` | Sí | `NULL` | No | — | No | — | Color. |
+| `kilometraje_actual` | `INT UNSIGNED` | No | `0` | No | — | No | Mayor o igual a cero | Último kilometraje confirmado. |
 | `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Eliminación lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
@@ -116,7 +120,9 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 - **ON DELETE / ON UPDATE:** `RESTRICT` / `RESTRICT`.
 - **Índices candidatos:** `id_cliente, activo`.
 - **Observaciones:** placa y chasis se normalizan a mayúsculas; MySQL permite
-  varios `NULL` en la restricción única de chasis.
+  varios `NULL` en la restricción única de chasis. `id_cliente` puede corregirse
+  solo mientras el vehículo no tenga órdenes; después queda inmutable. No se
+  crea historial de propietarios.
 
 ## `servicio`
 
@@ -125,6 +131,8 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `id_servicio` | `INT UNSIGNED` | No | Autonumérico | Sí | — | Sí | Mayor que cero | Identificador. |
 | `codigo` | `VARCHAR(30)` | No | — | No | — | Sí | No vacío | Código comercial. |
 | `nombre` | `VARCHAR(120)` | No | — | No | — | No | No vacío | Nombre del servicio. |
+| `categoria` | `VARCHAR(60)` | Sí | `NULL` | No | — | No | No vacía si se informa | Clasificación libre del servicio. |
+| `duracion_estimada_minutos` | `SMALLINT UNSIGNED` | Sí | `NULL` | No | — | No | Mayor que cero si se informa | Duración estimada. |
 | `descripcion` | `TEXT` | Sí | `NULL` | No | — | No | — | Detalle funcional. |
 | `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
@@ -144,8 +152,11 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `id_repuesto` | `INT UNSIGNED` | No | Autonumérico | Sí | — | Sí | Mayor que cero | Identificador. |
 | `codigo` | `VARCHAR(40)` | No | — | No | — | Sí | No vacío | Código interno/SKU. |
 | `nombre` | `VARCHAR(120)` | No | — | No | — | No | No vacío | Nombre del repuesto. |
+| `marca` | `VARCHAR(80)` | Sí | `NULL` | No | — | No | No vacía si se informa | Marca comercial. |
 | `descripcion` | `TEXT` | Sí | `NULL` | No | — | No | — | Detalle. |
 | `stock_actual` | `DECIMAL(12,2)` | No | `0.00` | No | — | No | Mayor o igual a cero | Existencia disponible. |
+| `stock_minimo` | `DECIMAL(12,2)` | No | `0.00` | No | — | No | Mayor o igual a cero | Umbral informativo de reposición. |
+| `unidad_medida` | `VARCHAR(20)` | No | — | No | — | No | No vacía | Unidad aplicable a stock y cantidades. |
 | `activo` | `TINYINT(1)` | No | `1` | No | — | No | En (0, 1) | Disponibilidad lógica. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta. |
 | `fecha_actualizacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Última modificación. |
@@ -155,8 +166,10 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 - **Relaciones:** 1:N con `historial_precio` y `detalle_orden`.
 - **ON DELETE / ON UPDATE:** `RESTRICT` / `RESTRICT`.
 - **Índices candidatos:** `activo, nombre`.
-- **Observaciones:** el movimiento se infiere de finalizaciones/auditoría; no se
-  añade una tabla de movimientos en este alcance.
+- **Observaciones:** existencias y cantidades siguen en `DECIMAL(12,2)` para
+  aceites, líquidos, mangueras u otros insumos fraccionables. La unidad de medida
+  no tendrá lista cerrada todavía. El movimiento se infiere de
+  finalizaciones/auditoría; no se añade una tabla de movimientos.
 
 ## `historial_precio`
 
@@ -194,6 +207,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `descripcion_problema` | `TEXT` | No | — | No | — | No | No vacía | Motivo de ingreso. |
 | `diagnostico` | `TEXT` | Sí | `NULL` | No | — | No | — | Diagnóstico técnico. |
 | `observacion` | `TEXT` | Sí | `NULL` | No | — | No | — | Notas generales. |
+| `kilometraje_ingreso` | `INT UNSIGNED` | No | — | No | — | No | Mayor o igual al kilometraje actual al crear | Kilometraje recibido. |
 | `inventario_descontado` | `TINYINT(1)` | No | `0` | No | — | No | En (0, 1); 1 solo si finalizada | Guardia idempotente. |
 | `fecha_apertura` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Inicio. |
 | `fecha_finalizacion` | `DATETIME` | Sí | `NULL` | No | — | No | Coherente con finalizada | Finalización. |
@@ -206,8 +220,9 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 - **ON DELETE / ON UPDATE:** `RESTRICT` / `RESTRICT`.
 - **Índices candidatos:** `id_vehiculo, fecha_apertura`;
   `id_mecanico, estado`; `estado, fecha_apertura`.
-- **Observaciones:** capacidad del mecánico, transición e inventario requieren
-  procedimientos transaccionales.
+- **Observaciones:** crear la orden y actualizar
+  `vehiculo.kilometraje_actual` será una sola transacción. Capacidad del
+  mecánico, transición e inventario requieren procedimientos transaccionales.
 
 ## `historial_estado_orden`
 
@@ -241,6 +256,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `cantidad` | `DECIMAL(12,2)` | No | — | No | — | No | Mayor que cero | Cantidad cobrada. |
 | `precio_unitario` | `DECIMAL(12,2)` | No | — | No | — | No | Mayor o igual a cero | Precio congelado. |
 | `subtotal` | `DECIMAL(12,2)` | No | — | No | — | No | Igual a cantidad por precio, redondeado | Importe congelado. |
+| `observacion` | `VARCHAR(500)` | Sí | `NULL` | No | — | No | — | Nota específica de la línea. |
 | `fecha_creacion` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Alta del detalle. |
 
 - **Propósito:** conceptos cobrables de una orden.
@@ -259,9 +275,12 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 |---|---|---:|---|---:|---|---:|---|---|
 | `id_factura` | `INT UNSIGNED` | No | Autonumérico | Sí | — | Sí | Mayor que cero | Identificador. |
 | `id_orden_trabajo` | `INT UNSIGNED` | No | — | No | `orden_trabajo.id_orden_trabajo` | Sí | — | Orden facturada una vez. |
-| `numero_factura` | `VARCHAR(30)` | No | — | No | — | Sí | No vacío | Correlativo visible. |
 | `estado` | `VARCHAR(10)` | No | `emitida` | No | — | No | En (emitida, anulada) | Estado documental. |
 | `fecha_emision` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Emisión. |
+| `identificacion_cliente` | `VARCHAR(13)` | No | — | No | — | No | 10 o 13 dígitos según cliente de origen | Identificación congelada. |
+| `nombre_cliente` | `VARCHAR(200)` | No | — | No | — | No | No vacío | Nombre o razón social congelados. |
+| `direccion_cliente` | `VARCHAR(255)` | Sí | `NULL` | No | — | No | — | Dirección congelada. |
+| `placa_vehiculo` | `VARCHAR(10)` | No | — | No | — | No | No vacía | Placa congelada. |
 | `subtotal` | `DECIMAL(12,2)` | No | — | No | — | No | Mayor o igual a cero | Suma antes de IVA. |
 | `porcentaje_iva` | `DECIMAL(5,2)` | No | `15.00` | No | — | No | Entre 0 y 100 | Tasa congelada. |
 | `valor_iva` | `DECIMAL(12,2)` | No | — | No | — | No | Igual al cálculo redondeado | IVA. |
@@ -272,12 +291,15 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `motivo_anulacion` | `VARCHAR(500)` | Sí | `NULL` | No | — | No | Obligatorio al anular | Justificación. |
 
 - **Propósito:** cabecera fiscal inmutable de una orden finalizada.
-- **Claves candidatas:** `id_factura`, `id_orden_trabajo`, `numero_factura`.
+- **Claves candidatas:** `id_factura`, `id_orden_trabajo`.
 - **Relaciones:** N:1 con orden y usuarios; 1:N con detalles y pagos.
 - **ON DELETE / ON UPDATE:** todas `RESTRICT` / `RESTRICT`.
 - **Índices candidatos:** `estado, fecha_emision`; FK de usuarios si las
   consultas lo justifican.
-- **Observaciones:** formato de número pendiente; pago se deriva, no se almacena.
+- **Observaciones:** identificación, nombre, dirección y placa se copian al
+  emitir y quedan inmutables. El número visible no se almacena: una vista futura
+  lo derivará de `id_factura` con formato `FAC-00000001`. El pago se deriva, no
+  se almacena como estado.
 
 ## `detalle_factura`
 
@@ -334,6 +356,7 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
 | `tabla_afectada` | `VARCHAR(64)` | No | — | No | — | No | No vacía | Tabla lógica afectada. |
 | `id_registro` | `BIGINT UNSIGNED` | No | — | No | — | No | Mayor que cero | ID lógico afectado. |
 | `accion` | `VARCHAR(30)` | No | — | No | — | No | Dominio de acciones auditables | Tipo de operación. |
+| `motivo` | `VARCHAR(500)` | Sí | `NULL` | No | — | No | — | Justificación de desactivación, anulación u operación sensible. |
 | `datos_anteriores` | `JSON` | Sí | `NULL` | No | — | No | JSON válido por tipo | Imagen anterior. |
 | `datos_nuevos` | `JSON` | Sí | `NULL` | No | — | No | JSON válido por tipo | Imagen nueva. |
 | `fecha_evento` | `DATETIME` | No | Fecha/hora actual | No | — | No | — | Momento. |
@@ -349,4 +372,3 @@ esta fase. Todas las FK tendrán tipos idénticos a sus PK: `INT UNSIGNED`.
   `id_usuario, fecha_evento`; `accion, fecha_evento`.
 - **Observaciones:** no hay FK polimórfica; `id_registro` es `BIGINT` para aceptar
   PK `INT` y `BIGINT`. La tabla no se actualiza ni elimina por lógica de negocio.
-

@@ -25,6 +25,10 @@ Esta Fase 0 no contiene SQL ejecutable.
 - `ON DELETE RESTRICT` y `ON UPDATE RESTRICT` como reglas generales.
 - Eliminación lógica para maestros con historial.
 - Todas las operaciones críticas de varias tablas serán transaccionales.
+- La cédula de cada usuario será única y tendrá exactamente 10 dígitos, sin
+  validación matemática del dígito verificador.
+- Las cantidades y existencias de inventario usarán `DECIMAL(12,2)` para admitir
+  insumos fraccionables.
 
 ## 3. Lista definitiva de tablas
 
@@ -137,6 +141,23 @@ cancela por estado; una factura y un pago se anulan conservando el registro.
 Las transiciones de orden se detallan en `reglas_negocio.md`. La disponibilidad
 manual del mecánico y su límite de órdenes activas se validarán conjuntamente.
 
+## 8.1 Datos maestros confirmados
+
+- `usuario` incorporará `cedula VARCHAR(10) NOT NULL UNIQUE` y
+  `telefono VARCHAR(20) NULL`. La cédula tendrá exactamente diez dígitos.
+- `cliente.telefono` será obligatorio; `correo` y `direccion` continuarán
+  opcionales. No se usará una regla alternativa de teléfono o correo.
+- `vehiculo` incorporará `kilometraje_actual INT UNSIGNED NOT NULL` con valor
+  inicial 0. Su año tendrá un rango declarativo fijo de 1886 a 2100.
+- `servicio` incorporará `categoria VARCHAR(60) NULL` y
+  `duracion_estimada_minutos SMALLINT UNSIGNED NULL`; la duración informada será
+  positiva.
+- `repuesto` incorporará `marca VARCHAR(80) NULL`,
+  `stock_minimo DECIMAL(12,2) NOT NULL` con valor inicial 0.00 y
+  `unidad_medida VARCHAR(20) NOT NULL` no vacía.
+- `auditoria` incorporará `motivo VARCHAR(500) NULL` para justificar
+  desactivaciones, anulaciones y operaciones sensibles.
+
 ## 9. Historial de precios
 
 `historial_precio` tendrá `id_servicio` e `id_repuesto` opcionales y un `CHECK`
@@ -162,7 +183,8 @@ precio de venta.
 
 `subtotal` se almacena para congelar el importe y se validará al escribir como
 `ROUND(cantidad * precio_unitario, 2)`. Los detalles dejan de modificarse al
-finalizar o cancelar la orden.
+finalizar o cancelar la orden. Cada detalle podrá incluir una `observacion`
+opcional de hasta 500 caracteres.
 
 ## 11. `detalle_factura`
 
@@ -179,12 +201,19 @@ la instantánea textual protege al documento de cambios futuros del catálogo.
 
 ## 12. Inventario
 
-`repuesto.stock_actual` y las cantidades usarán `DECIMAL(12,2)` para admitir
-unidades fraccionables (por ejemplo, fluidos), siempre no negativas. Al finalizar
-una orden, un procedimiento:
+`repuesto.stock_actual`, `repuesto.stock_minimo` y las cantidades usarán
+`DECIMAL(12,2)` para admitir unidades fraccionables como aceites, líquidos o
+mangueras. Ambos valores de stock serán no negativos. Cada repuesto tendrá una
+`unidad_medida` obligatoria y no vacía, sin limitarla todavía a un catálogo
+cerrado. `stock_minimo` servirá como umbral de reposición y no impedirá por sí
+solo consumir existencias.
+
+Al finalizar una orden, un procedimiento:
 
 1. bloqueará la orden y los repuestos involucrados;
-2. comprobará estado, disponibilidad de mecánico y existencias;
+2. comprobará que la orden esté en `en_reparacion`, contenga al menos un detalle,
+   tenga diagnóstico no vacío, existencias suficientes e
+   `inventario_descontado = 0`;
 3. descontará la suma requerida por repuesto;
 4. marcará `inventario_descontado = 1`;
 5. cambiará el estado a `finalizada` y registrará el historial;
@@ -192,6 +221,19 @@ una orden, un procedimiento:
 
 El indicador y el bloqueo evitan el doble descuento. Cualquier error provoca
 `ROLLBACK`.
+
+## 12.1 Kilometraje y apertura de órdenes
+
+`vehiculo.kilometraje_actual` será `INT UNSIGNED`, obligatorio y con valor
+inicial 0. Cada orden guardará `kilometraje_ingreso INT UNSIGNED` obligatorio.
+Al crear una orden, el kilometraje de ingreso no podrá ser inferior al actual
+del vehículo. Una creación válida insertará la orden, registrará su estado
+inicial y actualizará `vehiculo.kilometraje_actual` dentro de la misma
+transacción. Si cualquier paso falla, todos se revertirán.
+
+El propietario (`vehiculo.id_cliente`) podrá corregirse mientras el vehículo no
+tenga órdenes. Desde la primera orden se prohibirá cambiarlo mediante un
+procedimiento o trigger. No se añadirá un historial de propietarios.
 
 ## 13. Pagos
 
@@ -203,6 +245,38 @@ relacionado con estado `registrado`.
 Anular cambia el estado del pago, registra usuario, fecha y motivo, y mantiene
 el historial. Tras una anulación podrá registrarse un nuevo pago total.
 
+## 13.1 Facturación e instantáneas
+
+Durante la emisión se copiarán a `factura` la identificación y nombre del
+cliente, su dirección cuando exista y la placa del vehículo, en las columnas
+`identificacion_cliente`, `nombre_cliente`, `direccion_cliente` y
+`placa_vehiculo`. Esta instantánea no se modificará aunque luego cambien los
+maestros.
+
+No se almacenará `numero_factura`. Su valor visible se derivará de
+`id_factura` en una vista futura con el formato conceptual `FAC-00000001`,
+mediante una expresión equivalente a
+`CONCAT('FAC-', LPAD(id_factura, 8, '0'))`. Esto evita una tabla de secuencias,
+cálculos `MAX + 1` y bloqueos adicionales para numeración.
+
+El IVA confirmado es 15 %. Se calcula sobre el subtotal general, se redondea a
+dos decimales y el total es `subtotal + valor_iva`.
+
+## 13.2 Política de edición por estado
+
+| Estado | Campos o elementos modificables |
+|---|---|
+| `ingresada` | Mecánico, descripción del problema, observación y kilometraje de ingreso. |
+| `diagnostico` | Diagnóstico, mecánico, observación y detalles. |
+| `esperando_repuestos` | Diagnóstico, observación y detalles. |
+| `en_reparacion` | Diagnóstico, observación y detalles. |
+| `finalizada` | Ninguna modificación operativa. |
+| `cancelada` | Ninguna modificación operativa. |
+
+Una corrección del kilometraje durante `ingresada` deberá mantener la regla de
+no disminuir el kilometraje actual del vehículo y actualizar ambos valores en
+una transacción.
+
 ## 14. Distribución futura de mecanismos
 
 ### Restricciones declarativas
@@ -210,20 +284,26 @@ el historial. Tras una anulación podrá registrarse un nuevo pago total.
 - PK, FK, `UNIQUE`, obligatoriedad y tipos compatibles.
 - XOR servicio/repuesto en `historial_precio` y `detalle_orden`.
 - Dominios de estados, valores monetarios no negativos, cantidad positiva.
+- Cédula única del usuario, exactamente de 10 dígitos.
 - Identificación de cliente por tipo, longitud y caracteres numéricos.
 - Placa, chasis informado, nombre de usuario, correo y números de documento
   únicos donde corresponda.
+- Año del vehículo entre 1886 y 2100; kilometraje y stocks no negativos;
+  duración estimada positiva cuando se informe; unidad de medida no vacía.
 - Una factura por orden y un detalle de factura por detalle de orden.
 
 ### Procedimientos
 
 - Registrar una nueva vigencia de precio con bloqueo.
+- Crear la orden, validar/copiar kilometraje y actualizar el vehículo en una
+  transacción.
 - Agregar un detalle de orden y congelar el precio.
 - Cambiar estado de orden y escribir su historial.
 - Finalizar orden y descontar inventario una sola vez.
 - Emitir factura y copiar todos sus detalles en una transacción.
 - Registrar y anular pagos.
 - Anular factura con sus validaciones.
+- Corregir el propietario solo en vehículos sin órdenes.
 
 ### Triggers
 
@@ -231,6 +311,7 @@ el historial. Tras una anulación podrá registrarse un nuevo pago total.
 - Auditoría de cambios sensibles que puedan ocurrir fuera de procedimientos.
 - Inmutabilidad de factura y sus detalles después de emitidos.
 - Prevención defensiva de cambios directos incompatibles con estados terminales.
+- Protección de la política de campos editables y del propietario del vehículo.
 
 Los triggers no sustituirán la lógica transaccional principal.
 
@@ -238,31 +319,20 @@ Los triggers no sustituirán la lógica transaccional principal.
 
 - Catálogo de precios de venta vigentes sin `costo_base` para asesores.
 - Estado de cobro de facturas derivado de pagos no anulados.
+- Número visible de factura derivado de `id_factura` con formato
+  `FAC-00000001`.
 - Consultas de órdenes, totales y reportes sin exponer datos sensibles.
 
 ## 15. Riesgos y decisiones pendientes
 
-1. **Numeración de factura:** falta confirmar formato, serie, establecimiento,
-   punto de emisión y longitud exigidos por el contexto fiscal real. Se propone
-   provisionalmente un correlativo textual generado bajo bloqueo.
-2. **IVA:** se confirma 15 %, pero debe decidirse si el redondeo ocurre por línea
-   o sobre el subtotal general. Se propone calcularlo sobre el subtotal general,
-   con dos decimales.
-3. **Unidades fraccionables:** se propone `DECIMAL(12,2)` para stock y cantidad.
-   Debe validarse si todos los repuestos serán indivisibles; en ese caso podría
-   usarse `INT UNSIGNED`.
-4. **Datos personales obligatorios:** teléfono, correo y dirección quedan
-   opcionales; el negocio debe confirmar los mínimos de contacto.
-5. **Reasignación del propietario:** el modelo permite actualizar
-   `vehiculo.id_cliente`, pero hacerlo alteraría la lectura histórica. Se propone
-   prohibir la reasignación cuando existan órdenes y registrar otro vehículo si
-   se requiere preservar propietarios históricos.
-6. **Mecánico y rol:** la base exigirá que el perfil apunte a un usuario, pero
+1. **Numeración fiscal oficial:** el identificador visible interno queda
+   confirmado como derivado de `id_factura`. Si en el futuro se exige una
+   numeración tributaria externa con establecimiento, punto de emisión o
+   autorización, deberá modelarse como una ampliación independiente.
+2. **Mecánico y rol:** la base exigirá que el perfil apunte a un usuario, pero
    verificar que ese usuario tenga rol `mecanico` requiere procedimiento o
    trigger porque un `CHECK` no consulta otra tabla.
-7. **Edición de órdenes:** falta acordar qué campos pueden cambiar en cada
-   estado; se propone bloquear sus detalles en estados terminales.
-8. **Auditoría del actor:** el backend deberá establecer de forma confiable el
+3. **Auditoría del actor:** el backend deberá establecer de forma confiable el
    usuario de aplicación para operaciones auditables.
 
 ## 16. Cambios o precisiones respecto del modelo conceptual
@@ -276,6 +346,8 @@ Los triggers no sustituirán la lógica transaccional principal.
   fuentes de verdad.
 - `detalle_factura` conserva instantáneas además de la referencia única al
   detalle de origen; esto garantiza trazabilidad e inmutabilidad.
+- `factura` conserva además la instantánea mínima de cliente y vehículo, y el
+  número visible se deriva de su PK en una vista, sin columna almacenada.
 - `auditoria` usa referencia lógica en lugar de muchas FK opcionales, evitando
   acoplamiento, columnas redundantes y ciclos.
 
@@ -291,4 +363,3 @@ Los triggers no sustituirán la lógica transaccional principal.
 | `07_triggers.sql` | Auditoría, defensas de integridad e inmutabilidad. |
 | `08_seed_data.sql` | Datos ficticios: roles, usuarios, maestros, precios y escenarios reproducibles. |
 | `09_test_queries.sql` | Casos válidos, inválidos, duplicados, estados prohibidos, concurrencia e integridad de `ROLLBACK`. |
-
