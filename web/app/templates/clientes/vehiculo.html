@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ vehiculo.placa }} | Taller Mecánico{% endblock %}
+{% block page_heading %}Historial del vehículo{% endblock %}
+{% block content %}
+<section class="page-intro"><div><span class="eyebrow">{{ vehiculo.marca }} {{ vehiculo.modelo }}</span><h2>{{ vehiculo.placa }}</h2><p>{{ vehiculo.nombre_cliente }} · {{ vehiculo.identificacion }}</p></div><div class="quick-actions"><a class="btn btn-accent" href="{{ url_for('ordenes.nueva', vehiculo=vehiculo.id_vehiculo) }}">Nueva orden</a><a class="btn btn-outline-light" href="{{ url_for('clientes.detalle', id_cliente=vehiculo.id_cliente) }}">Cliente</a></div></section>
+<section class="panel info-strip"><dl><div><dt>Chasis</dt><dd>{{ vehiculo.numero_chasis or 'No registrado' }}</dd></div><div><dt>Año</dt><dd>{{ vehiculo.anio or '—' }}</dd></div><div><dt>Color</dt><dd>{{ vehiculo.color or '—' }}</dd></div><div><dt>Kilometraje</dt><dd>{{ vehiculo.kilometraje_actual }}</dd></div><div><dt>Estado</dt><dd>{{ 'Activo' if vehiculo.activo else 'Inactivo' }}</dd></div></dl></section>
+<section class="panel mt-3"><div class="panel-heading"><h3>Órdenes de trabajo</h3></div><div class="table-responsive"><table class="table table-dark-custom"><thead><tr><th>Orden</th><th>Apertura</th><th>Estado</th><th>Problema</th><th>Diagnóstico</th><th>Total</th></tr></thead><tbody>
+{% for item in historial %}<tr><td><a href="{{ url_for('ordenes.detalle', id_orden_trabajo=item.id_orden_trabajo) }}">#{{ item.id_orden_trabajo }}</a></td><td>{{ item.fecha_apertura }}</td><td><span class="status status-{{ item.estado }}">{{ item.estado|replace('_',' ') }}</span></td><td>{{ item.descripcion_problema }}</td><td>{{ item.diagnostico or 'Pendiente' }}</td><td>${{ "%.2f"|format(item.total_estimado) }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty-state">Este vehículo aún no tiene órdenes.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

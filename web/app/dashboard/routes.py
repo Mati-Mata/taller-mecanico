@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from flask import flash, render_template
-from flask_login import login_required
+from flask import flash, redirect, render_template, url_for
+from flask_login import current_user, login_required
 
 from app.db import DatabaseError, fetch_all, fetch_one
 
@@ -94,6 +94,7 @@ def _load_dashboard() -> dict[str, Any]:
     invoices = fetch_all(
         """
             SELECT
+                id_factura,
                 numero_factura,
                 estado_factura,
                 estado_cobro,
@@ -138,6 +139,8 @@ def _load_dashboard() -> dict[str, Any]:
 @login_required
 def index():
     """Muestra métricas y actividad real de la base."""
+    if current_user.rol == "mecanico":
+        return redirect(url_for("ordenes.index"))
     try:
         context = _load_dashboard()
     except DatabaseError:

@@ -2,7 +2,14 @@
 
 from typing import Any
 
-from flask import Flask, jsonify, redirect, render_template, url_for
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    send_from_directory,
+    url_for,
+)
 from flask_login import LoginManager
 
 from .config import Config
@@ -35,10 +42,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return None
 
     from .auth import bp as auth_bp
+    from .clientes import bp as clientes_bp
     from .dashboard import bp as dashboard_bp
+    from .facturacion import bp as facturacion_bp
+    from .ordenes import bp as ordenes_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(clientes_bp)
+    app.register_blueprint(ordenes_bp)
+    app.register_blueprint(facturacion_bp)
 
     @app.get("/")
     def index():
@@ -77,6 +90,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             ),
             mysql_connected=True,
             mysql_version=(row or {}).get("mysql_version"),
+        )
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return send_from_directory(
+            app.static_folder,
+            "favicon.svg",
+            mimetype="image/svg+xml",
         )
 
     @app.errorhandler(403)

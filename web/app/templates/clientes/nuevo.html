@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Nuevo cliente | Taller Mecánico{% endblock %}
+{% block page_heading %}Alta de cliente y vehículo{% endblock %}
+{% block content %}
+<section class="page-intro"><div><span class="eyebrow">Recepción</span><h2>Nuevo ingreso</h2><p>El cliente y su primer vehículo se registran en una sola operación transaccional.</p></div></section>
+<form method="post" class="form-layout" data-client-form>
+  <section class="panel form-panel">
+    <div class="panel-heading"><h3>Datos del cliente</h3></div>
+    <div class="form-grid">
+      <label>Tipo de cliente<select class="form-select" name="tipo_cliente" required data-client-type><option value="persona">Persona</option><option value="empresa">Empresa</option></select></label>
+      <label>Tipo de identificación<select class="form-select" name="tipo_identificacion" required><option value="cedula">Cédula</option><option value="ruc">RUC</option></select></label>
+      <label>Identificación<input class="form-control" name="identificacion" required maxlength="13" inputmode="numeric"></label>
+      <label data-person-field>Nombres<input class="form-control" name="nombres"></label>
+      <label data-person-field>Apellidos<input class="form-control" name="apellidos"></label>
+      <label data-company-field hidden>Razón social<input class="form-control" name="razon_social"></label>
+      <label>Teléfono<input class="form-control" name="telefono" required></label>
+      <label>Correo<input class="form-control" type="email" name="correo"></label>
+      <label class="span-2">Dirección<input class="form-control" name="direccion"></label>
+    </div>
+  </section>
+  <section class="panel form-panel">
+    <div class="panel-heading"><h3>Primer vehículo</h3></div>
+    <div class="form-grid">
+      <label>Placa<input class="form-control text-uppercase" name="placa" required></label>
+      <label>Número de chasis<input class="form-control" name="numero_chasis"></label>
+      <label>Marca<input class="form-control" name="marca" required></label>
+      <label>Modelo<input class="form-control" name="modelo" required></label>
+      <label>Año<input class="form-control" type="number" name="anio" min="1886" max="2100"></label>
+      <label>Color<input class="form-control" name="color"></label>
+      <label>Kilometraje actual<input class="form-control" type="number" name="kilometraje_actual" min="0" value="0" required></label>
+    </div>
+  </section>
+  <div class="form-actions"><a class="btn btn-outline-light" href="{{ url_for('clientes.index') }}">Cancelar</a><button class="btn btn-accent" type="submit">Crear cliente y vehículo</button></div>
+</form>
+{% endblock %}

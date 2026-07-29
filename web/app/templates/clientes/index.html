@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Clientes | Taller Mecánico{% endblock %}
+{% block page_heading %}Clientes y vehículos{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div><span class="eyebrow">Recepción</span><h2>Clientes</h2><p>Busca por identidad, nombre, teléfono o placa.</p></div>
+  <a class="btn btn-accent" href="{{ url_for('clientes.nuevo') }}"><i class="bi bi-person-plus"></i> Nuevo cliente</a>
+</section>
+<form class="filter-bar" method="get">
+  <input class="form-control" name="q" value="{{ search }}" placeholder="Identificación, nombre, teléfono o placa">
+  <button class="btn btn-outline-light" type="submit">Buscar</button>
+  {% if search %}<a class="btn btn-link text-light" href="{{ url_for('clientes.index') }}">Limpiar</a>{% endif %}
+</form>
+<section class="panel">
+  <div class="table-responsive">
+    <table class="table table-dark-custom align-middle">
+      <thead><tr><th>Cliente</th><th>Identificación</th><th>Contacto</th><th>Vehículos</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+      {% for cliente in clientes %}
+        <tr>
+          <td><strong>{{ cliente.nombre_cliente }}</strong><br><small>{{ cliente.tipo_cliente }}</small></td>
+          <td>{{ cliente.identificacion }}</td>
+          <td>{{ cliente.telefono }}<br><small>{{ cliente.correo or 'Sin correo' }}</small></td>
+          <td>{{ cliente.cantidad_vehiculos }}</td>
+          <td><span class="status status-{{ 'finalizada' if cliente.activo else 'cancelada' }}">{{ 'activo' if cliente.activo else 'inactivo' }}</span></td>
+          <td><a class="btn btn-sm btn-outline-light" href="{{ url_for('clientes.detalle', id_cliente=cliente.id_cliente) }}">Ver</a></td>
+        </tr>
+      {% else %}<tr><td colspan="6" class="empty-state">No se encontraron clientes.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

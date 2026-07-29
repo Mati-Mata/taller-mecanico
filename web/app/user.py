@@ -23,6 +23,7 @@ class User(UserMixin):
     nombres: str
     apellidos: str
     rol: str
+    id_mecanico: int | None
 
     def get_id(self) -> str:
         return str(self.id_usuario)
@@ -39,6 +40,7 @@ class User(UserMixin):
             nombres=row["nombres"],
             apellidos=row["apellidos"],
             rol=row["rol"],
+            id_mecanico=row["id_mecanico"],
         )
 
 
@@ -51,9 +53,13 @@ USER_QUERY = """
         u.apellidos,
         u.activo AS usuario_activo,
         r.nombre AS rol,
-        r.activo AS rol_activo
+        r.activo AS rol_activo,
+        m.id_mecanico
     FROM usuario AS u
     INNER JOIN rol AS r ON r.id_rol = u.id_rol
+    LEFT JOIN mecanico AS m
+        ON m.id_usuario = u.id_usuario
+       AND m.activo = 1
 """
 
 

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ factura.numero_factura }} | Taller Mecánico{% endblock %}
+{% block page_heading %}{{ factura.numero_factura }}{% endblock %}
+{% block content %}
+<section class="page-intro no-print">
+  <div><span class="eyebrow">Factura de venta</span><h2>{{ factura.numero_factura }}</h2><p>Orden #{{ factura.id_orden_trabajo }} · {{ factura.fecha_emision }}</p></div>
+  <div class="quick-actions"><button class="btn btn-outline-light" type="button" data-print><i class="bi bi-printer"></i> Imprimir</button><a class="btn btn-outline-light" href="{{ url_for('facturacion.index') }}">Volver</a></div>
+</section>
+<section class="invoice-sheet">
+  <header class="invoice-header"><div><span class="brand-mark"><i class="bi bi-gear-wide-connected"></i></span><div><strong>Taller Mecánico</strong><small>Comprobante demostrativo</small></div></div><div><strong>{{ factura.numero_factura }}</strong><span class="status status-{{ factura.estado_factura }}">{{ factura.estado_factura }}</span><span class="status status-{{ factura.estado_cobro }}">{{ factura.estado_cobro }}</span></div></header>
+  <div class="invoice-parties"><div><small>Cliente</small><strong>{{ factura.nombre_cliente }}</strong><span>{{ factura.identificacion_cliente }}</span><span>{{ factura.direccion_cliente or 'Dirección no registrada' }}</span></div><div><small>Vehículo</small><strong>{{ factura.placa_vehiculo }}</strong><span>Orden #{{ factura.id_orden_trabajo }}</span><span>{{ factura.fecha_emision }}</span></div></div>
+  <div class="table-responsive"><table class="table table-dark-custom"><thead><tr><th>Código</th><th>Concepto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead><tbody>
+  {% for item in detalles %}<tr><td>{{ item.codigo_concepto }}</td><td>{{ item.descripcion_concepto }}<br><small>{{ item.tipo_concepto }}</small></td><td>{{ item.cantidad }}</td><td>${{ "%.2f"|format(item.precio_unitario) }}</td><td>${{ "%.2f"|format(item.subtotal) }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <div class="invoice-totals"><dl><dt>Subtotal</dt><dd>${{ "%.2f"|format(factura.subtotal) }}</dd><dt>IVA {{ factura.porcentaje_iva }}%</dt><dd>${{ "%.2f"|format(factura.valor_iva) }}</dd><dt>Total</dt><dd>${{ "%.2f"|format(factura.total) }}</dd><dt>Pagado</dt><dd>${{ "%.2f"|format(factura.monto_pagado) }}</dd><dt>Saldo</dt><dd>${{ "%.2f"|format(factura.saldo) }}</dd></dl></div>
+</section>
+<div class="detail-grid mt-3 no-print">
+  <section class="panel"><div class="panel-heading"><h3>Pagos</h3></div><div class="card-list">{% for pago in pagos %}<article class="entity-card"><span><strong>${{ "%.2f"|format(pago.monto) }} · {{ pago.metodo_pago }}</strong><small>{{ pago.fecha_pago }} · {{ pago.estado }}{% if pago.referencia %} · Ref. {{ pago.referencia }}{% endif %}</small></span>{% if current_user.rol == 'administrador' and pago.estado == 'registrado' %}<form method="post" action="{{ url_for('facturacion.anular_pago', id_pago=pago.id_pago) }}" data-confirm="¿Anular este pago?"><input class="form-control form-control-sm" name="motivo" placeholder="Motivo" required><button class="btn btn-sm btn-outline-danger" type="submit">Anular</button></form>{% endif %}</article>{% else %}<div class="empty-state">No hay pagos registrados.</div>{% endfor %}</div></section>
+  <section class="panel form-panel">
+    {% if factura.estado_factura == 'emitida' and factura.saldo > 0 %}<div class="panel-heading"><h3>Registrar pago total</h3></div><form method="post" action="{{ url_for('facturacion.registrar_pago', id_factura=factura.id_factura) }}" data-payment-form><label>Monto total<input class="form-control" name="monto" value="{{ '%.2f'|format(factura.total) }}" readonly></label><label>Método<select class="form-select" name="metodo_pago" required data-payment-method><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option></select></label><label>Referencia<input class="form-control" name="referencia" data-payment-reference></label><label>Fecha y hora (opcional)<input class="form-control" type="datetime-local" name="fecha_pago"></label><button class="btn btn-accent mt-3" type="submit">Registrar pago</button></form>
+    {% else %}<div class="panel-heading"><h3>Cobro cerrado</h3></div><p class="muted-copy">{{ 'La factura fue anulada.' if factura.estado_factura == 'anulada' else 'La factura está pagada.' }}</p>{% endif %}
+    {% if current_user.rol == 'administrador' and factura.estado_factura == 'emitida' %}<hr><form method="post" action="{{ url_for('facturacion.anular', id_factura=factura.id_factura) }}" data-confirm="¿Anular la factura? Esta acción requiere no tener pagos registrados activos."><label>Motivo de anulación<input class="form-control" name="motivo" required></label><button class="btn btn-outline-danger mt-2" type="submit">Anular factura</button></form>{% endif %}
+  </section>
+</div>
+{% endblock %}

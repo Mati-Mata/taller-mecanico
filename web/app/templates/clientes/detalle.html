@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ cliente.nombre_cliente }} | Taller Mecánico{% endblock %}
+{% block page_heading %}Ficha de cliente{% endblock %}
+{% block content %}
+<section class="page-intro"><div><span class="eyebrow">{{ cliente.tipo_cliente }}</span><h2>{{ cliente.nombre_cliente }}</h2><p>{{ cliente.tipo_identificacion }} · {{ cliente.identificacion }}</p></div><a class="btn btn-outline-light" href="{{ url_for('clientes.index') }}">Volver</a></section>
+<div class="detail-grid">
+  <section class="panel info-panel"><div class="panel-heading"><h3>Contacto</h3></div><dl><dt>Teléfono</dt><dd>{{ cliente.telefono }}</dd><dt>Correo</dt><dd>{{ cliente.correo or 'No registrado' }}</dd><dt>Dirección</dt><dd>{{ cliente.direccion or 'No registrada' }}</dd><dt>Estado</dt><dd>{{ 'Activo' if cliente.activo else 'Inactivo' }}</dd></dl></section>
+  <section class="panel"><div class="panel-heading"><h3>Vehículos</h3></div><div class="card-list">
+    {% for vehiculo in vehiculos %}<a class="entity-card" href="{{ url_for('clientes.vehiculo', id_vehiculo=vehiculo.id_vehiculo) }}"><span><strong>{{ vehiculo.placa }}</strong><small>{{ vehiculo.marca }} {{ vehiculo.modelo }} · {{ vehiculo.anio or 'Año no registrado' }} · {{ vehiculo.kilometraje_actual }} km</small></span><i class="bi bi-chevron-right"></i></a>
+    {% else %}<div class="empty-state">No hay vehículos registrados.</div>{% endfor %}
+  </div></section>
+</div>
+<section class="panel mt-3"><div class="panel-heading"><h3>Historial del cliente</h3></div><div class="table-responsive"><table class="table table-dark-custom"><thead><tr><th>Orden</th><th>Vehículo</th><th>Estado</th><th>Problema</th><th>Mecánico</th><th>Total estimado</th></tr></thead><tbody>
+{% for item in historial %}<tr><td><a href="{{ url_for('ordenes.detalle', id_orden_trabajo=item.id_orden_trabajo) }}">#{{ item.id_orden_trabajo }}</a></td><td>{{ item.placa }}</td><td><span class="status status-{{ item.estado }}">{{ item.estado|replace('_',' ') }}</span></td><td>{{ item.descripcion_problema }}</td><td>{{ item.nombre_mecanico }}</td><td>${{ "%.2f"|format(item.total_estimado) }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty-state">Sin historial de órdenes.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

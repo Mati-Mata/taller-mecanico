@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Nueva orden | Taller Mecánico{% endblock %}
+{% block page_heading %}Nueva orden de trabajo{% endblock %}
+{% block content %}
+<section class="page-intro"><div><span class="eyebrow">Recepción</span><h2>Abrir orden</h2><p>Asigna un vehículo activo y un mecánico responsable.</p></div></section>
+<form method="post" class="panel form-panel">
+  <div class="form-grid">
+    <label>Vehículo<select class="form-select" name="id_vehiculo" required><option value="">Seleccionar</option>{% for vehiculo in vehiculos %}<option value="{{ vehiculo.id_vehiculo }}" {{ 'selected' if vehiculo.id_vehiculo == vehiculo_preseleccionado }}>{{ vehiculo.placa }} · {{ vehiculo.marca }} {{ vehiculo.modelo }} · {{ vehiculo.nombre_cliente }}</option>{% endfor %}</select></label>
+    <label>Mecánico<select class="form-select" name="id_mecanico" required><option value="">Seleccionar</option>{% for mecanico in mecanicos %}<option value="{{ mecanico.id_mecanico }}">{{ mecanico.nombre_mecanico }} · {{ mecanico.especialidad }} · {{ mecanico.disponibilidad|replace('_',' ') }}</option>{% endfor %}</select></label>
+    <label>Kilometraje de ingreso<input class="form-control" type="number" name="kilometraje_ingreso" min="0" required></label>
+    <label class="span-2">Problema reportado<textarea class="form-control" name="descripcion_problema" rows="4" required></textarea></label>
+    <label class="span-2">Observación inicial<textarea class="form-control" name="observacion" rows="3"></textarea></label>
+  </div>
+  <div class="form-actions"><a class="btn btn-outline-light" href="{{ url_for('ordenes.index') }}">Cancelar</a><button class="btn btn-accent" type="submit">Crear orden</button></div>
+</form>
+{% endblock %}

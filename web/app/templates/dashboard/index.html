@@ -10,18 +10,15 @@
         <h2>Actividad operativa</h2>
         <p>Indicadores obtenidos directamente de la base de datos.</p>
     </div>
-    <div class="quick-actions" aria-label="Acciones próximas">
-        <a class="btn btn-accent disabled" href="#" aria-disabled="true">
+    <div class="quick-actions" aria-label="Acciones rápidas">
+        <a class="btn btn-accent" href="{{ url_for('clientes.nuevo') }}">
             <i class="bi bi-person-plus"></i> Nuevo cliente
-            <span>Próximamente</span>
         </a>
-        <a class="btn btn-outline-light disabled" href="#" aria-disabled="true">
+        <a class="btn btn-outline-light" href="{{ url_for('ordenes.nueva') }}">
             <i class="bi bi-plus-square"></i> Nueva orden
-            <span>Próximamente</span>
         </a>
-        <a class="btn btn-outline-light disabled" href="#" aria-disabled="true">
+        <a class="btn btn-outline-light" href="{{ url_for('facturacion.index') }}">
             <i class="bi bi-receipt"></i> Ver facturas
-            <span>Próximamente</span>
         </a>
     </div>
 </section>
@@ -87,7 +84,7 @@
                 <tbody>
                 {% for orden in latest_orders %}
                     <tr>
-                        <td>#{{ orden.id_orden_trabajo }}</td>
+                        <td><a href="{{ url_for('ordenes.detalle', id_orden_trabajo=orden.id_orden_trabajo) }}">#{{ orden.id_orden_trabajo }}</a></td>
                         <td><strong>{{ orden.placa }}</strong></td>
                         <td>{{ orden.mecanico }}</td>
                         <td>
@@ -155,7 +152,7 @@
                 <tbody>
                 {% for factura in invoices %}
                     <tr>
-                        <td><strong>{{ factura.numero_factura }}</strong></td>
+                        <td><a href="{{ url_for('facturacion.detalle', id_factura=factura.id_factura) }}"><strong>{{ factura.numero_factura }}</strong></a></td>
                         <td>{{ factura.nombre_cliente }}</td>
                         <td>
                             <span class="status status-{{ factura.estado_cobro }}">

@@ -37,6 +37,35 @@ def test_dashboard_requires_login(client):
     assert "/login" in response.headers["Location"]
 
 
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/clientes",
+        "/clientes/nuevo",
+        "/clientes/1",
+        "/vehiculos/1",
+        "/ordenes",
+        "/ordenes/nueva",
+        "/ordenes/1",
+        "/facturas",
+        "/facturas/1",
+    ),
+)
+def test_operational_routes_require_login(client, path):
+    response = client.get(path, follow_redirects=False)
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
+
+
+def test_order_transition_matrix():
+    from app.ordenes.routes import estados_siguientes
+
+    assert estados_siguientes("ingresada") == ("diagnostico", "cancelada")
+    assert "en_reparacion" in estados_siguientes("diagnostico")
+    assert estados_siguientes("finalizada") == ()
+    assert estados_siguientes("estado_desconocido") == ()
+
+
 def test_unknown_route_returns_404(client):
     response = client.get("/ruta-que-no-existe")
     assert response.status_code == 404

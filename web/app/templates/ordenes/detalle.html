@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Orden #{{ orden.id_orden_trabajo }} | Taller Mecánico{% endblock %}
+{% block page_heading %}Orden #{{ orden.id_orden_trabajo }}{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div><span class="eyebrow">{{ orden.placa }} · {{ orden.marca }} {{ orden.modelo }}</span><h2>Orden #{{ orden.id_orden_trabajo }}</h2><p>{{ orden.nombre_cliente }} · Mecánico: {{ orden.nombre_mecanico }}</p></div>
+  <span class="status status-{{ orden.estado }} status-lg">{{ orden.estado|replace('_',' ') }}</span>
+</section>
+<div class="detail-grid">
+  <section class="panel info-panel"><div class="panel-heading"><h3>Recepción</h3></div><dl><dt>Problema</dt><dd>{{ orden.descripcion_problema }}</dd><dt>Kilometraje</dt><dd>{{ orden.kilometraje_ingreso }}</dd><dt>Apertura</dt><dd>{{ orden.fecha_apertura }}</dd><dt>Observación</dt><dd>{{ orden.observacion or 'Sin observación' }}</dd></dl></section>
+  <section class="panel form-panel"><div class="panel-heading"><h3>Diagnóstico</h3></div>
+    {% if orden.estado in ('diagnostico','esperando_repuestos','en_reparacion') %}
+    <form method="post" action="{{ url_for('ordenes.actualizar_diagnostico', id_orden_trabajo=orden.id_orden_trabajo) }}"><textarea class="form-control" name="diagnostico" rows="4" required>{{ orden.diagnostico or '' }}</textarea><input class="form-control mt-2" name="observacion" placeholder="Observación del cambio"><button class="btn btn-outline-light mt-3" type="submit">Guardar diagnóstico</button></form>
+    {% else %}<p class="muted-copy">{{ orden.diagnostico or 'El diagnóstico no puede modificarse en el estado actual.' }}</p>{% endif %}
+  </section>
+</div>
+<section class="panel mt-3"><div class="panel-heading"><div><span class="eyebrow">Precio congelado</span><h3>Conceptos de la orden</h3></div></div>
+  <div class="table-responsive"><table class="table table-dark-custom"><thead><tr><th>Tipo</th><th>Descripción</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead><tbody>
+  {% for item in detalles %}<tr><td>{{ item.tipo_concepto }}</td><td>{{ item.descripcion_concepto }}</td><td>{{ item.cantidad }}</td><td>${{ "%.2f"|format(item.precio_unitario) }}</td><td>${{ "%.2f"|format(item.subtotal) }}</td></tr>
+  {% else %}<tr><td colspan="5" class="empty-state">Aún no hay conceptos.</td></tr>{% endfor %}</tbody>
+  {% if detalles %}<tfoot><tr><th colspan="4">Total estimado</th><th>${{ "%.2f"|format(detalles|sum(attribute='subtotal')) }}</th></tr></tfoot>{% endif %}</table></div>
+  {% if orden.estado in ('diagnostico','esperando_repuestos','en_reparacion') %}
+  <form class="inline-form" method="post" action="{{ url_for('ordenes.agregar_detalle', id_orden_trabajo=orden.id_orden_trabajo) }}">
+    <input type="hidden" name="tipo_concepto" data-concept-type>
+    <select class="form-select" name="id_concepto" required data-concept-selector><option value="">Seleccionar servicio o repuesto</option>{% for concepto in conceptos %}<option value="{{ concepto.id_concepto }}" data-type="{{ concepto.tipo_concepto }}">{{ concepto.tipo_concepto|title }} · {{ concepto.codigo }} · {{ concepto.nombre }} · ${{ "%.2f"|format(concepto.precio_venta) }}</option>{% endfor %}</select>
+    <input class="form-control" type="number" name="cantidad" min="0.01" step="0.01" value="1" required><input class="form-control" name="observacion" placeholder="Observación"><button class="btn btn-accent" type="submit">Agregar</button>
+  </form>{% endif %}
+</section>
+<div class="detail-grid mt-3">
+  <section class="panel form-panel"><div class="panel-heading"><h3>Estado operativo</h3></div>
+    {% if estados_siguientes %}<form method="post" action="{{ url_for('ordenes.cambiar_estado', id_orden_trabajo=orden.id_orden_trabajo) }}"><select class="form-select" name="estado" required>{% for estado in estados_siguientes %}<option value="{{ estado }}">{{ estado|replace('_',' ')|title }}</option>{% endfor %}</select><input class="form-control mt-2" name="observacion" placeholder="Motivo u observación"><button class="btn btn-outline-light mt-3" type="submit">Cambiar estado</button></form>{% else %}<p class="muted-copy">La orden está en un estado terminal.</p>{% endif %}
+    {% if orden.estado == 'en_reparacion' %}<form class="mt-3" method="post" action="{{ url_for('ordenes.finalizar', id_orden_trabajo=orden.id_orden_trabajo) }}" data-confirm="Esta acción descontará inventario y finalizará la orden."><input class="form-control" name="observacion" placeholder="Observación final"><button class="btn btn-accent mt-2" type="submit">Finalizar orden</button></form>{% endif %}
+  </section>
+  <section class="panel form-panel"><div class="panel-heading"><h3>Facturación</h3></div>
+    {% if factura %}<p><strong>{{ factura.numero_factura }}</strong></p><p>Estado: <span class="status status-{{ factura.estado_cobro }}">{{ factura.estado_cobro }}</span></p>{% if current_user.rol in ('administrador','asesor') %}<a class="btn btn-outline-light" href="{{ url_for('facturacion.detalle', id_factura=factura.id_factura) }}">Ver factura</a>{% endif %}
+    {% elif orden.estado == 'finalizada' and current_user.rol in ('administrador','asesor') %}<form method="post" action="{{ url_for('facturacion.generar', id_orden_trabajo=orden.id_orden_trabajo) }}"><button class="btn btn-accent" type="submit">Generar factura</button></form>
+    {% else %}<p class="muted-copy">Disponible al finalizar la orden.</p>{% endif %}
+  </section>
+</div>
+<section class="panel mt-3"><div class="panel-heading"><h3>Historial de estados</h3></div><div class="timeline">{% for item in historial %}<article><span></span><div><strong>{{ item.estado_nuevo|replace('_',' ')|title }}</strong><small>{{ item.fecha_cambio }} · {{ item.nombre_usuario }}</small><p>{{ item.observacion or 'Sin observación' }}</p></div></article>{% endfor %}</div></section>
+{% endblock %}
