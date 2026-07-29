@@ -1,4 +1,4 @@
--- Datos semilla reproducibles para demostrar el flujo integral del taller.
+	-- Datos semilla reproducibles para demostrar el flujo integral del taller.
 -- Este script requiere una base recién creada y vacía.
 -- Para ejecutarlo nuevamente, reconstruya la base desde 01_create_database.sql.
 
@@ -126,6 +126,13 @@ SELECT id_usuario INTO @id_usuario_mecanico_1
 SELECT id_usuario INTO @id_usuario_mecanico_2
   FROM usuario
  WHERE nombre_usuario = 'mecanico_dos';
+
+-- Rotación demostrativa: ambos valores son marcadores de hash ficticios.
+-- El backend real usará bcrypt o Argon2; la auditoría debe registrar únicamente
+-- password_hash_cambiado y nunca el valor del hash.
+UPDATE usuario
+   SET password_hash = 'DEMO_HASH_NO_USAR_ASESOR_ROTADO_2026'
+ WHERE id_usuario = @id_usuario_asesor;
 
 INSERT INTO mecanico (
     id_usuario,
@@ -910,3 +917,4 @@ SELECT tabla_afectada, accion, COUNT(*) AS cantidad
   FROM auditoria
  GROUP BY tabla_afectada, accion
  ORDER BY tabla_afectada, accion;
+	
