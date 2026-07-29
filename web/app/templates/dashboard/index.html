@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Taller Mecánico{% endblock %}
+{% block page_heading %}Panel general{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+    <div>
+        <span class="eyebrow">Resumen del taller</span>
+        <h2>Actividad operativa</h2>
+        <p>Indicadores obtenidos directamente de la base de datos.</p>
+    </div>
+    <div class="quick-actions" aria-label="Acciones próximas">
+        <a class="btn btn-accent disabled" href="#" aria-disabled="true">
+            <i class="bi bi-person-plus"></i> Nuevo cliente
+            <span>Próximamente</span>
+        </a>
+        <a class="btn btn-outline-light disabled" href="#" aria-disabled="true">
+            <i class="bi bi-plus-square"></i> Nueva orden
+            <span>Próximamente</span>
+        </a>
+        <a class="btn btn-outline-light disabled" href="#" aria-disabled="true">
+            <i class="bi bi-receipt"></i> Ver facturas
+            <span>Próximamente</span>
+        </a>
+    </div>
+</section>
+
+<section class="stats-grid" aria-label="Indicadores">
+    <article class="stat-card">
+        <span class="stat-icon"><i class="bi bi-wrench-adjustable-circle"></i></span>
+        <div>
+            <span>Órdenes activas</span>
+            <strong>{{ stats.ordenes_activas }}</strong>
+        </div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-icon success"><i class="bi bi-check2-circle"></i></span>
+        <div>
+            <span>Finalizadas</span>
+            <strong>{{ stats.ordenes_finalizadas }}</strong>
+        </div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-icon warning"><i class="bi bi-hourglass-split"></i></span>
+        <div>
+            <span>Facturas pendientes</span>
+            <strong>{{ stats.facturas_pendientes }}</strong>
+        </div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-icon danger"><i class="bi bi-box-seam"></i></span>
+        <div>
+            <span>Stock bajo</span>
+            <strong>{{ stats.repuestos_bajo_minimo }}</strong>
+        </div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-icon neutral"><i class="bi bi-person-gear"></i></span>
+        <div>
+            <span>Mecánicos activos</span>
+            <strong>{{ stats.mecanicos_activos }}</strong>
+        </div>
+    </article>
+</section>
+
+<div class="dashboard-grid">
+    <section class="panel panel-orders">
+        <div class="panel-heading">
+            <div>
+                <span class="eyebrow">Operación</span>
+                <h3>Últimas órdenes</h3>
+            </div>
+            <i class="bi bi-clock-history"></i>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark-custom align-middle">
+                <thead>
+                    <tr>
+                        <th>Orden</th>
+                        <th>Vehículo</th>
+                        <th>Mecánico</th>
+                        <th>Estado</th>
+                        <th>Apertura</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for orden in latest_orders %}
+                    <tr>
+                        <td>#{{ orden.id_orden_trabajo }}</td>
+                        <td><strong>{{ orden.placa }}</strong></td>
+                        <td>{{ orden.mecanico }}</td>
+                        <td>
+                            <span class="status status-{{ orden.estado }}">
+                                {{ orden.estado|replace('_', ' ') }}
+                            </span>
+                        </td>
+                        <td>{{ orden.fecha_apertura }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">No hay órdenes disponibles.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel panel-stock">
+        <div class="panel-heading">
+            <div>
+                <span class="eyebrow">Inventario</span>
+                <h3>Repuestos por reponer</h3>
+            </div>
+            <i class="bi bi-exclamation-triangle"></i>
+        </div>
+        <div class="stock-list">
+        {% for repuesto in low_stock %}
+            <article class="stock-item">
+                <div>
+                    <strong>{{ repuesto.nombre }}</strong>
+                    <span>{{ repuesto.codigo }}</span>
+                </div>
+                <div class="stock-values">
+                    <strong>{{ repuesto.stock_actual }} {{ repuesto.unidad_medida }}</strong>
+                    <span>Mínimo: {{ repuesto.stock_minimo }}</span>
+                </div>
+            </article>
+        {% else %}
+            <div class="empty-state">No hay repuestos bajo el stock mínimo.</div>
+        {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel panel-invoices">
+        <div class="panel-heading">
+            <div>
+                <span class="eyebrow">Cobros</span>
+                <h3>Facturas recientes</h3>
+            </div>
+            <i class="bi bi-receipt-cutoff"></i>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark-custom align-middle">
+                <thead>
+                    <tr>
+                        <th>Factura</th>
+                        <th>Cliente</th>
+                        <th>Estado</th>
+                        <th>Total</th>
+                        <th>Saldo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for factura in invoices %}
+                    <tr>
+                        <td><strong>{{ factura.numero_factura }}</strong></td>
+                        <td>{{ factura.nombre_cliente }}</td>
+                        <td>
+                            <span class="status status-{{ factura.estado_cobro }}">
+                                {{ factura.estado_cobro }}
+                            </span>
+                        </td>
+                        <td>${{ "%.2f"|format(factura.total) }}</td>
+                        <td>${{ "%.2f"|format(factura.saldo) }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">No hay facturas disponibles.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

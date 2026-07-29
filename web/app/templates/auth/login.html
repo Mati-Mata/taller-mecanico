@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar sesión | Taller Mecánico{% endblock %}
+
+{% block content %}
+<section class="login-card" aria-labelledby="login-title">
+    <div class="login-brand">
+        <span class="brand-mark brand-mark-lg">
+            <i class="bi bi-gear-wide-connected"></i>
+        </span>
+        <div>
+            <span class="eyebrow">Sistema local</span>
+            <h1 id="login-title">Taller Mecánico</h1>
+        </div>
+    </div>
+
+    <p class="login-copy">
+        Acceda al centro de operaciones para consultar órdenes, inventario y
+        facturación.
+    </p>
+
+    <form method="post" action="{{ url_for('auth.login') }}" class="login-form">
+        <div>
+            <label class="form-label" for="username">Usuario</label>
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-person"></i></span>
+                <input
+                    class="form-control"
+                    id="username"
+                    name="username"
+                    type="text"
+                    autocomplete="username"
+                    required
+                    autofocus
+                >
+            </div>
+        </div>
+        <div>
+            <label class="form-label" for="password">Contraseña</label>
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-shield-lock"></i></span>
+                <input
+                    class="form-control"
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                >
+            </div>
+        </div>
+        <button class="btn btn-accent w-100" type="submit">
+            Iniciar sesión
+            <i class="bi bi-arrow-right"></i>
+        </button>
+    </form>
+
+    <div class="login-help">
+        <i class="bi bi-info-circle"></i>
+        Configure primero el acceso local de <code>admin_demo</code> con
+        <code>python set_demo_password.py</code>.
+    </div>
+</section>
+{% endblock %}
