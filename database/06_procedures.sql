@@ -1312,4 +1312,612 @@ BEGIN
     SET @app_motivo = NULL;
 END$$
 
+-- Genera una factura y copia los detalles congelados de una orden finalizada.
+DROP PROCEDURE IF EXISTS sp_generar_factura$$
+CREATE PROCEDURE sp_generar_factura (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_orden_trabajo INT UNSIGNED,
+    OUT p_id_factura_creada INT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_estado_orden VARCHAR(25) DEFAULT NULL;
+    DECLARE v_inventario_descontado TINYINT UNSIGNED DEFAULT NULL;
+    DECLARE v_id_vehiculo INT UNSIGNED DEFAULT NULL;
+    DECLARE v_id_cliente INT UNSIGNED DEFAULT NULL;
+    DECLARE v_placa_vehiculo VARCHAR(10) DEFAULT NULL;
+    DECLARE v_identificacion_cliente VARCHAR(13) DEFAULT NULL;
+    DECLARE v_nombre_cliente VARCHAR(200) DEFAULT NULL;
+    DECLARE v_direccion_cliente VARCHAR(255) DEFAULT NULL;
+    DECLARE v_cantidad_detalles INT DEFAULT 0;
+    DECLARE v_detalles_insertados INT DEFAULT 0;
+    DECLARE v_facturas_existentes INT DEFAULT 0;
+    DECLARE v_subtotal DECIMAL(12,2) DEFAULT NULL;
+    DECLARE v_porcentaje_iva DECIMAL(5,2) DEFAULT 15.00;
+    DECLARE v_valor_iva DECIMAL(12,2) DEFAULT NULL;
+    DECLARE v_total DECIMAL(12,2) DEFAULT NULL;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_id_factura_creada = NULL;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_id_factura_creada = NULL;
+
+    IF p_id_usuario_actor IS NULL OR p_id_orden_trabajo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la orden son obligatorios';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_actor_valido
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre IN ('administrador', 'asesor');
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor no existe, esta inactivo o no tiene rol permitido';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_generar_factura';
+    SET @app_motivo = NULL;
+
+    START TRANSACTION;
+
+    -- La orden se bloquea primero para serializar la facturación.
+    SELECT ot.estado, ot.inventario_descontado, ot.id_vehiculo
+      INTO v_estado_orden, v_inventario_descontado, v_id_vehiculo
+      FROM orden_trabajo AS ot
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo
+     FOR UPDATE;
+
+    IF v_estado_orden IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden de trabajo no existe';
+    END IF;
+
+    IF v_estado_orden <> 'finalizada' OR v_inventario_descontado <> 1 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden debe estar finalizada y con inventario descontado';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_facturas_existentes
+      FROM factura AS f
+     WHERE f.id_orden_trabajo = p_id_orden_trabajo;
+
+    IF v_facturas_existentes > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden ya tiene una factura';
+    END IF;
+
+    -- Vehículo y cliente se bloquean después de la orden para una instantánea consistente.
+    SELECT v.id_cliente, v.placa
+      INTO v_id_cliente, v_placa_vehiculo
+      FROM vehiculo AS v
+     WHERE v.id_vehiculo = v_id_vehiculo
+     FOR UPDATE;
+
+    IF v_id_cliente IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El vehiculo historico de la orden no existe';
+    END IF;
+
+    SELECT c.identificacion,
+           CASE
+               WHEN c.tipo_cliente = 'persona'
+                   THEN CONCAT_WS(' ', NULLIF(TRIM(c.nombres), ''), NULLIF(TRIM(c.apellidos), ''))
+               WHEN c.tipo_cliente = 'empresa'
+                   THEN c.razon_social
+               ELSE NULL
+           END,
+           c.direccion
+      INTO v_identificacion_cliente, v_nombre_cliente, v_direccion_cliente
+      FROM cliente AS c
+     WHERE c.id_cliente = v_id_cliente
+     FOR UPDATE;
+
+    SET v_identificacion_cliente = NULLIF(TRIM(v_identificacion_cliente), '');
+    SET v_nombre_cliente = NULLIF(TRIM(v_nombre_cliente), '');
+    SET v_placa_vehiculo = NULLIF(TRIM(v_placa_vehiculo), '');
+
+    IF v_identificacion_cliente IS NULL
+       OR v_nombre_cliente IS NULL
+       OR v_placa_vehiculo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La instantanea de cliente y vehiculo esta incompleta';
+    END IF;
+
+    SELECT COUNT(*), SUM(det.subtotal)
+      INTO v_cantidad_detalles, v_subtotal
+      FROM detalle_orden AS det
+     WHERE det.id_orden_trabajo = p_id_orden_trabajo;
+
+    IF v_cantidad_detalles = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden debe contener al menos un detalle';
+    END IF;
+
+    IF v_subtotal IS NULL OR v_subtotal < 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El subtotal calculado de la orden no es valido';
+    END IF;
+
+    SET v_valor_iva = ROUND(v_subtotal * v_porcentaje_iva / 100, 2);
+    SET v_total = v_subtotal + v_valor_iva;
+
+    INSERT INTO factura (
+        id_orden_trabajo,
+        estado,
+        fecha_emision,
+        identificacion_cliente,
+        nombre_cliente,
+        direccion_cliente,
+        placa_vehiculo,
+        subtotal,
+        porcentaje_iva,
+        valor_iva,
+        total,
+        id_usuario_emision,
+        fecha_anulacion,
+        id_usuario_anulacion,
+        motivo_anulacion
+    )
+    VALUES (
+        p_id_orden_trabajo,
+        'emitida',
+        CURRENT_TIMESTAMP,
+        v_identificacion_cliente,
+        v_nombre_cliente,
+        v_direccion_cliente,
+        v_placa_vehiculo,
+        v_subtotal,
+        v_porcentaje_iva,
+        v_valor_iva,
+        v_total,
+        p_id_usuario_actor,
+        NULL,
+        NULL,
+        NULL
+    );
+
+    SET p_id_factura_creada = LAST_INSERT_ID();
+
+    -- Se copian exclusivamente los importes congelados de detalle_orden.
+    INSERT INTO detalle_factura (
+        id_factura,
+        id_detalle_orden,
+        tipo_concepto,
+        codigo_concepto,
+        descripcion_concepto,
+        cantidad,
+        precio_unitario,
+        subtotal
+    )
+    SELECT p_id_factura_creada,
+           det.id_detalle_orden,
+           CASE
+               WHEN det.id_servicio IS NOT NULL THEN 'servicio'
+               ELSE 'repuesto'
+           END,
+           CASE
+               WHEN det.id_servicio IS NOT NULL THEN s.codigo
+               ELSE r.codigo
+           END,
+           det.descripcion_concepto,
+           det.cantidad,
+           det.precio_unitario,
+           det.subtotal
+      FROM detalle_orden AS det
+      LEFT JOIN servicio AS s ON s.id_servicio = det.id_servicio
+      LEFT JOIN repuesto AS r ON r.id_repuesto = det.id_repuesto
+     WHERE det.id_orden_trabajo = p_id_orden_trabajo;
+
+    SET v_detalles_insertados = ROW_COUNT();
+
+    IF v_detalles_insertados <> v_cantidad_detalles THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se copiaron todos los detalles de la orden';
+    END IF;
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
+-- Registra el pago total de una factura emitida.
+DROP PROCEDURE IF EXISTS sp_registrar_pago$$
+CREATE PROCEDURE sp_registrar_pago (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_factura INT UNSIGNED,
+    IN p_monto DECIMAL(12,2),
+    IN p_metodo_pago VARCHAR(20),
+    IN p_referencia VARCHAR(100),
+    IN p_fecha_pago DATETIME,
+    OUT p_id_pago_creado INT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_metodo_pago VARCHAR(20) DEFAULT NULL;
+    DECLARE v_referencia VARCHAR(100) DEFAULT NULL;
+    DECLARE v_fecha_pago DATETIME DEFAULT NULL;
+    DECLARE v_estado_factura VARCHAR(10) DEFAULT NULL;
+    DECLARE v_fecha_emision DATETIME DEFAULT NULL;
+    DECLARE v_total_factura DECIMAL(12,2) DEFAULT NULL;
+    DECLARE v_pagos_registrados INT DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_id_pago_creado = NULL;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_id_pago_creado = NULL;
+    SET v_metodo_pago = LOWER(TRIM(p_metodo_pago));
+    SET v_referencia = NULLIF(TRIM(p_referencia), '');
+    SET v_fecha_pago = COALESCE(p_fecha_pago, CURRENT_TIMESTAMP);
+
+    IF p_id_usuario_actor IS NULL OR p_id_factura IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la factura son obligatorios';
+    END IF;
+
+    IF p_monto IS NULL OR p_monto <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El monto debe ser mayor que cero';
+    END IF;
+
+    IF v_metodo_pago IS NULL
+       OR v_metodo_pago NOT IN ('efectivo', 'tarjeta', 'transferencia') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El metodo de pago no es valido';
+    END IF;
+
+    IF v_metodo_pago IN ('tarjeta', 'transferencia')
+       AND v_referencia IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La referencia es obligatoria para este metodo de pago';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_actor_valido
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre IN ('administrador', 'asesor');
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor no existe, esta inactivo o no tiene rol permitido';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_registrar_pago';
+    SET @app_motivo = NULL;
+
+    START TRANSACTION;
+
+    -- El bloqueo de factura serializa intentos simultáneos de pago.
+    SELECT f.estado, f.fecha_emision, f.total
+      INTO v_estado_factura, v_fecha_emision, v_total_factura
+      FROM factura AS f
+     WHERE f.id_factura = p_id_factura
+     FOR UPDATE;
+
+    IF v_estado_factura IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La factura no existe';
+    END IF;
+
+    IF v_estado_factura <> 'emitida' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Solo se puede pagar una factura emitida';
+    END IF;
+
+    IF p_monto <> v_total_factura THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pago debe ser exactamente igual al total de la factura';
+    END IF;
+
+    IF v_fecha_pago < v_fecha_emision THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La fecha de pago no puede ser anterior a la emision';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_pagos_registrados
+      FROM pago AS p
+     WHERE p.id_factura = p_id_factura
+       AND p.estado = 'registrado';
+
+    IF v_pagos_registrados > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La factura ya tiene un pago registrado';
+    END IF;
+
+    INSERT INTO pago (
+        id_factura,
+        monto,
+        metodo_pago,
+        referencia,
+        estado,
+        fecha_pago,
+        id_usuario_registro,
+        fecha_anulacion,
+        id_usuario_anulacion,
+        motivo_anulacion
+    )
+    VALUES (
+        p_id_factura,
+        p_monto,
+        v_metodo_pago,
+        v_referencia,
+        'registrado',
+        v_fecha_pago,
+        p_id_usuario_actor,
+        NULL,
+        NULL,
+        NULL
+    );
+
+    SET p_id_pago_creado = LAST_INSERT_ID();
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
+-- Anula un pago sin eliminar su registro histórico.
+DROP PROCEDURE IF EXISTS sp_anular_pago$$
+CREATE PROCEDURE sp_anular_pago (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_pago INT UNSIGNED,
+    IN p_motivo_anulacion VARCHAR(500),
+    OUT p_pago_anulado TINYINT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_motivo_anulacion VARCHAR(500) DEFAULT NULL;
+    DECLARE v_id_factura_esperada INT UNSIGNED DEFAULT NULL;
+    DECLARE v_id_factura_pago INT UNSIGNED DEFAULT NULL;
+    DECLARE v_estado_factura VARCHAR(10) DEFAULT NULL;
+    DECLARE v_estado_pago VARCHAR(10) DEFAULT NULL;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_pago_anulado = 0;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_pago_anulado = 0;
+    SET v_motivo_anulacion = NULLIF(TRIM(p_motivo_anulacion), '');
+
+    IF p_id_usuario_actor IS NULL OR p_id_pago IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y el pago son obligatorios';
+    END IF;
+
+    IF v_motivo_anulacion IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El motivo de anulacion es obligatorio';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_actor_valido
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre = 'administrador';
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor debe ser un administrador activo';
+    END IF;
+
+    -- La lectura inicial permite conocer qué factura debe bloquearse primero.
+    SELECT p.id_factura
+      INTO v_id_factura_esperada
+      FROM pago AS p
+     WHERE p.id_pago = p_id_pago;
+
+    IF v_id_factura_esperada IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pago no existe';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_anular_pago';
+    SET @app_motivo = v_motivo_anulacion;
+
+    START TRANSACTION;
+
+    -- Se bloquea siempre factura antes que pago para reducir deadlocks.
+    SELECT f.estado
+      INTO v_estado_factura
+      FROM factura AS f
+     WHERE f.id_factura = v_id_factura_esperada
+     FOR UPDATE;
+
+    IF v_estado_factura IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La factura asociada al pago no existe';
+    END IF;
+
+    SELECT p.id_factura, p.estado
+      INTO v_id_factura_pago, v_estado_pago
+      FROM pago AS p
+     WHERE p.id_pago = p_id_pago
+     FOR UPDATE;
+
+    IF v_id_factura_pago IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pago ya no existe';
+    END IF;
+
+    IF v_id_factura_pago <> v_id_factura_esperada THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pago cambio de factura durante la operacion';
+    END IF;
+
+    IF v_estado_factura <> 'emitida' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede anular un pago de una factura anulada';
+    END IF;
+
+    IF v_estado_pago <> 'registrado' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El pago ya esta anulado';
+    END IF;
+
+    UPDATE pago AS p
+       SET estado = 'anulado',
+           fecha_anulacion = CURRENT_TIMESTAMP,
+           id_usuario_anulacion = p_id_usuario_actor,
+           motivo_anulacion = v_motivo_anulacion
+     WHERE p.id_pago = p_id_pago;
+
+    SET p_pago_anulado = 1;
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
+-- Anula una factura emitida cuando no conserva pagos registrados.
+DROP PROCEDURE IF EXISTS sp_anular_factura$$
+CREATE PROCEDURE sp_anular_factura (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_factura INT UNSIGNED,
+    IN p_motivo_anulacion VARCHAR(500),
+    OUT p_factura_anulada TINYINT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_motivo_anulacion VARCHAR(500) DEFAULT NULL;
+    DECLARE v_estado_factura VARCHAR(10) DEFAULT NULL;
+    DECLARE v_pagos_registrados INT DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_factura_anulada = 0;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_factura_anulada = 0;
+    SET v_motivo_anulacion = NULLIF(TRIM(p_motivo_anulacion), '');
+
+    IF p_id_usuario_actor IS NULL OR p_id_factura IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la factura son obligatorios';
+    END IF;
+
+    IF v_motivo_anulacion IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El motivo de anulacion es obligatorio';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_actor_valido
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre = 'administrador';
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor debe ser un administrador activo';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_anular_factura';
+    SET @app_motivo = v_motivo_anulacion;
+
+    START TRANSACTION;
+
+    -- El bloqueo impide competir con el registro o la anulación de pagos.
+    SELECT f.estado
+      INTO v_estado_factura
+      FROM factura AS f
+     WHERE f.id_factura = p_id_factura
+     FOR UPDATE;
+
+    IF v_estado_factura IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La factura no existe';
+    END IF;
+
+    IF v_estado_factura <> 'emitida' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La factura ya esta anulada';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_pagos_registrados
+      FROM pago AS p
+     WHERE p.id_factura = p_id_factura
+       AND p.estado = 'registrado';
+
+    IF v_pagos_registrados > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Primero debe anularse el pago registrado';
+    END IF;
+
+    UPDATE factura AS f
+       SET estado = 'anulada',
+           fecha_anulacion = CURRENT_TIMESTAMP,
+           id_usuario_anulacion = p_id_usuario_actor,
+           motivo_anulacion = v_motivo_anulacion
+     WHERE f.id_factura = p_id_factura;
+
+    SET p_factura_anulada = 1;
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
 DELIMITER ;
