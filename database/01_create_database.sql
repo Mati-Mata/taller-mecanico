@@ -8,3 +8,6 @@ CREATE DATABASE taller_mecanico
     COLLATE utf8mb4_0900_ai_ci;
 
 USE taller_mecanico;
+
+SHOW DATABASES LIKE 'taller_mecanico';
+SELECT DATABASE();

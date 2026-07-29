@@ -837,4 +837,479 @@ BEGIN
     SET @app_motivo = NULL;
 END$$
 
+-- Actualiza diagnóstico y observación sin alterar el estado de la orden.
+DROP PROCEDURE IF EXISTS sp_actualizar_diagnostico_orden$$
+CREATE PROCEDURE sp_actualizar_diagnostico_orden (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_orden_trabajo INT UNSIGNED,
+    IN p_diagnostico TEXT,
+    IN p_observacion TEXT,
+    OUT p_actualizada TINYINT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_rol_actor VARCHAR(30) DEFAULT NULL;
+    DECLARE v_id_mecanico_actor INT UNSIGNED DEFAULT NULL;
+    DECLARE v_estado_orden VARCHAR(25) DEFAULT NULL;
+    DECLARE v_id_mecanico_orden INT UNSIGNED DEFAULT NULL;
+    DECLARE v_diagnostico TEXT;
+    DECLARE v_observacion TEXT;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_actualizada = 0;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_actualizada = 0;
+    SET v_diagnostico = TRIM(p_diagnostico);
+    SET v_observacion = NULLIF(TRIM(p_observacion), '');
+
+    IF p_id_usuario_actor IS NULL OR p_id_orden_trabajo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la orden son obligatorios';
+    END IF;
+
+    IF v_diagnostico IS NULL OR v_diagnostico = '' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El diagnostico es obligatorio';
+    END IF;
+
+    SELECT COUNT(*), MAX(r.nombre), MAX(m.id_mecanico)
+      INTO v_actor_valido, v_rol_actor, v_id_mecanico_actor
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+      LEFT JOIN mecanico AS m
+        ON m.id_usuario = u.id_usuario
+       AND m.activo = 1
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre IN ('administrador', 'asesor', 'mecanico');
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor no existe, esta inactivo o no tiene rol permitido';
+    END IF;
+
+    IF v_rol_actor = 'mecanico' AND v_id_mecanico_actor IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor mecanico no tiene un perfil activo';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_actualizar_diagnostico_orden';
+    SET @app_motivo = v_observacion;
+
+    START TRANSACTION;
+
+    -- La orden se bloquea antes de validar estado y responsabilidad.
+    SELECT ot.estado, ot.id_mecanico
+      INTO v_estado_orden, v_id_mecanico_orden
+      FROM orden_trabajo AS ot
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo
+     FOR UPDATE;
+
+    IF v_estado_orden IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden de trabajo no existe';
+    END IF;
+
+    IF v_estado_orden NOT IN (
+        'diagnostico',
+        'esperando_repuestos',
+        'en_reparacion'
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden no admite actualizar el diagnostico';
+    END IF;
+
+    IF v_rol_actor = 'mecanico'
+       AND v_id_mecanico_actor <> v_id_mecanico_orden THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El mecanico actor no es responsable de la orden';
+    END IF;
+
+    UPDATE orden_trabajo AS ot
+       SET diagnostico = v_diagnostico,
+           observacion = v_observacion
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo;
+
+    SET p_actualizada = 1;
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
+-- Aplica una transición operativa permitida y registra su historial.
+DROP PROCEDURE IF EXISTS sp_cambiar_estado_orden$$
+CREATE PROCEDURE sp_cambiar_estado_orden (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_orden_trabajo INT UNSIGNED,
+    IN p_estado_nuevo VARCHAR(25),
+    IN p_observacion VARCHAR(500),
+    OUT p_id_historial_estado_creado INT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_rol_actor VARCHAR(30) DEFAULT NULL;
+    DECLARE v_id_mecanico_actor INT UNSIGNED DEFAULT NULL;
+    DECLARE v_estado_actual VARCHAR(25) DEFAULT NULL;
+    DECLARE v_estado_nuevo VARCHAR(25);
+    DECLARE v_id_mecanico_orden INT UNSIGNED DEFAULT NULL;
+    DECLARE v_inventario_descontado TINYINT UNSIGNED DEFAULT NULL;
+    DECLARE v_observacion VARCHAR(500);
+    DECLARE v_transicion_valida TINYINT UNSIGNED DEFAULT 0;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_id_historial_estado_creado = NULL;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_id_historial_estado_creado = NULL;
+    SET v_estado_nuevo = LOWER(TRIM(p_estado_nuevo));
+    SET v_observacion = NULLIF(TRIM(p_observacion), '');
+
+    IF p_id_usuario_actor IS NULL OR p_id_orden_trabajo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la orden son obligatorios';
+    END IF;
+
+    IF v_estado_nuevo IS NULL OR v_estado_nuevo = '' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El estado nuevo es obligatorio';
+    END IF;
+
+    SELECT COUNT(*), MAX(r.nombre), MAX(m.id_mecanico)
+      INTO v_actor_valido, v_rol_actor, v_id_mecanico_actor
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+      LEFT JOIN mecanico AS m
+        ON m.id_usuario = u.id_usuario
+       AND m.activo = 1
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre IN ('administrador', 'asesor', 'mecanico');
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor no existe, esta inactivo o no tiene rol permitido';
+    END IF;
+
+    IF v_rol_actor = 'mecanico' AND v_id_mecanico_actor IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor mecanico no tiene un perfil activo';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_cambiar_estado_orden';
+    SET @app_motivo = v_observacion;
+
+    START TRANSACTION;
+
+    -- El bloqueo impide transiciones concurrentes sobre la misma orden.
+    SELECT ot.estado, ot.id_mecanico, ot.inventario_descontado
+      INTO v_estado_actual, v_id_mecanico_orden, v_inventario_descontado
+      FROM orden_trabajo AS ot
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo
+     FOR UPDATE;
+
+    IF v_estado_actual IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden de trabajo no existe';
+    END IF;
+
+    IF v_rol_actor = 'mecanico'
+       AND v_id_mecanico_actor <> v_id_mecanico_orden THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El mecanico actor no es responsable de la orden';
+    END IF;
+
+    IF v_estado_actual IN ('finalizada', 'cancelada') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede cambiar una orden en estado terminal';
+    END IF;
+
+    IF v_estado_nuevo = v_estado_actual THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El estado nuevo debe ser diferente del actual';
+    END IF;
+
+    IF v_estado_nuevo = 'finalizada' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Use sp_finalizar_orden para finalizar una orden';
+    END IF;
+
+    SET v_transicion_valida = CASE
+        WHEN v_estado_actual = 'ingresada'
+             AND v_estado_nuevo IN ('diagnostico', 'cancelada') THEN 1
+        WHEN v_estado_actual = 'diagnostico'
+             AND v_estado_nuevo IN (
+                 'esperando_repuestos',
+                 'en_reparacion',
+                 'cancelada'
+             ) THEN 1
+        WHEN v_estado_actual = 'esperando_repuestos'
+             AND v_estado_nuevo IN ('en_reparacion', 'cancelada') THEN 1
+        WHEN v_estado_actual = 'en_reparacion'
+             AND v_estado_nuevo IN ('esperando_repuestos', 'cancelada') THEN 1
+        ELSE 0
+    END;
+
+    IF v_transicion_valida = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La transicion de estado no esta permitida';
+    END IF;
+
+    IF v_inventario_descontado <> 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden ya tiene inventario descontado';
+    END IF;
+
+    UPDATE orden_trabajo AS ot
+       SET estado = v_estado_nuevo
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo;
+
+    INSERT INTO historial_estado_orden (
+        id_orden_trabajo,
+        estado_anterior,
+        estado_nuevo,
+        id_usuario,
+        observacion
+    )
+    VALUES (
+        p_id_orden_trabajo,
+        v_estado_actual,
+        v_estado_nuevo,
+        p_id_usuario_actor,
+        v_observacion
+    );
+
+    SET p_id_historial_estado_creado = LAST_INSERT_ID();
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
+-- Finaliza una orden y descuenta los repuestos agrupados en una transacción.
+DROP PROCEDURE IF EXISTS sp_finalizar_orden$$
+CREATE PROCEDURE sp_finalizar_orden (
+    IN p_id_usuario_actor INT UNSIGNED,
+    IN p_id_orden_trabajo INT UNSIGNED,
+    IN p_observacion VARCHAR(500),
+    OUT p_id_historial_estado_creado INT UNSIGNED
+)
+SQL SECURITY INVOKER
+MODIFIES SQL DATA
+BEGIN
+    DECLARE v_actor_valido INT DEFAULT 0;
+    DECLARE v_rol_actor VARCHAR(30) DEFAULT NULL;
+    DECLARE v_id_mecanico_actor INT UNSIGNED DEFAULT NULL;
+    DECLARE v_estado_orden VARCHAR(25) DEFAULT NULL;
+    DECLARE v_id_mecanico_orden INT UNSIGNED DEFAULT NULL;
+    DECLARE v_diagnostico TEXT;
+    DECLARE v_inventario_descontado TINYINT UNSIGNED DEFAULT NULL;
+    DECLARE v_cantidad_detalles INT DEFAULT 0;
+    DECLARE v_observacion VARCHAR(500);
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_id_historial_estado_creado = NULL;
+        SET @app_id_usuario = NULL;
+        SET @app_origen = NULL;
+        SET @app_motivo = NULL;
+        RESIGNAL;
+    END;
+
+    SET p_id_historial_estado_creado = NULL;
+    SET v_observacion = NULLIF(TRIM(p_observacion), '');
+
+    IF p_id_usuario_actor IS NULL OR p_id_orden_trabajo IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor y la orden son obligatorios';
+    END IF;
+
+    SELECT COUNT(*), MAX(r.nombre), MAX(m.id_mecanico)
+      INTO v_actor_valido, v_rol_actor, v_id_mecanico_actor
+      FROM usuario AS u
+      INNER JOIN rol AS r ON r.id_rol = u.id_rol
+      LEFT JOIN mecanico AS m
+        ON m.id_usuario = u.id_usuario
+       AND m.activo = 1
+     WHERE u.id_usuario = p_id_usuario_actor
+       AND u.activo = 1
+       AND r.activo = 1
+       AND r.nombre IN ('administrador', 'asesor', 'mecanico');
+
+    IF v_actor_valido = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor no existe, esta inactivo o no tiene rol permitido';
+    END IF;
+
+    IF v_rol_actor = 'mecanico' AND v_id_mecanico_actor IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El actor mecanico no tiene un perfil activo';
+    END IF;
+
+    SET @app_id_usuario = p_id_usuario_actor;
+    SET @app_origen = 'sp_finalizar_orden';
+    SET @app_motivo = v_observacion;
+
+    START TRANSACTION;
+
+    -- La orden se bloquea primero, igual que al agregar un detalle.
+    SELECT ot.estado,
+           ot.id_mecanico,
+           ot.diagnostico,
+           ot.inventario_descontado
+      INTO v_estado_orden,
+           v_id_mecanico_orden,
+           v_diagnostico,
+           v_inventario_descontado
+      FROM orden_trabajo AS ot
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo
+     FOR UPDATE;
+
+    IF v_estado_orden IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden de trabajo no existe';
+    END IF;
+
+    IF v_rol_actor = 'mecanico'
+       AND v_id_mecanico_actor <> v_id_mecanico_orden THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El mecanico actor no es responsable de la orden';
+    END IF;
+
+    IF v_estado_orden <> 'en_reparacion' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Solo puede finalizar una orden en reparacion';
+    END IF;
+
+    IF v_diagnostico IS NULL OR TRIM(v_diagnostico) = '' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden debe tener un diagnostico';
+    END IF;
+
+    IF v_inventario_descontado <> 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El inventario de la orden ya fue descontado';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_cantidad_detalles
+      FROM detalle_orden AS det
+     WHERE det.id_orden_trabajo = p_id_orden_trabajo;
+
+    IF v_cantidad_detalles = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La orden debe contener al menos un detalle';
+    END IF;
+
+    -- El handler NOT FOUND queda aislado del resto de SELECT ... INTO.
+    BEGIN
+        DECLARE v_fin_cursor TINYINT UNSIGNED DEFAULT 0;
+        DECLARE v_id_repuesto INT UNSIGNED DEFAULT NULL;
+        DECLARE v_cantidad_requerida DECIMAL(12,2) DEFAULT NULL;
+        DECLARE v_stock_actual DECIMAL(12,2) DEFAULT NULL;
+
+        DECLARE cur_repuestos CURSOR FOR
+            SELECT det.id_repuesto, SUM(det.cantidad)
+              FROM detalle_orden AS det
+             WHERE det.id_orden_trabajo = p_id_orden_trabajo
+               AND det.id_repuesto IS NOT NULL
+             GROUP BY det.id_repuesto
+             ORDER BY det.id_repuesto;
+
+        DECLARE CONTINUE HANDLER FOR NOT FOUND
+            SET v_fin_cursor = 1;
+
+        OPEN cur_repuestos;
+
+        bucle_repuestos: LOOP
+            FETCH cur_repuestos
+             INTO v_id_repuesto, v_cantidad_requerida;
+
+            IF v_fin_cursor = 1 THEN
+                LEAVE bucle_repuestos;
+            END IF;
+
+            SET v_stock_actual = NULL;
+
+            -- Los repuestos se bloquean en orden ascendente de identificador.
+            SELECT r.stock_actual
+              INTO v_stock_actual
+              FROM repuesto AS r
+             WHERE r.id_repuesto = v_id_repuesto
+             FOR UPDATE;
+
+            IF v_stock_actual IS NULL THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Un repuesto de la orden ya no existe';
+            END IF;
+
+            IF v_stock_actual < v_cantidad_requerida THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Stock insuficiente para finalizar la orden';
+            END IF;
+
+            UPDATE repuesto AS r
+               SET stock_actual = stock_actual - v_cantidad_requerida
+             WHERE r.id_repuesto = v_id_repuesto;
+        END LOOP;
+
+        CLOSE cur_repuestos;
+    END;
+
+    UPDATE orden_trabajo AS ot
+       SET estado = 'finalizada',
+           inventario_descontado = 1,
+           fecha_finalizacion = CURRENT_TIMESTAMP
+     WHERE ot.id_orden_trabajo = p_id_orden_trabajo;
+
+    INSERT INTO historial_estado_orden (
+        id_orden_trabajo,
+        estado_anterior,
+        estado_nuevo,
+        id_usuario,
+        observacion
+    )
+    VALUES (
+        p_id_orden_trabajo,
+        'en_reparacion',
+        'finalizada',
+        p_id_usuario_actor,
+        v_observacion
+    );
+
+    SET p_id_historial_estado_creado = LAST_INSERT_ID();
+
+    COMMIT;
+
+    SET @app_id_usuario = NULL;
+    SET @app_origen = NULL;
+    SET @app_motivo = NULL;
+END$$
+
 DELIMITER ;

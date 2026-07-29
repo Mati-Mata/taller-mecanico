@@ -211,3 +211,57 @@ VIEW vw_facturas_estado_cobro AS
         GROUP BY id_factura
     ) AS rp
         ON rp.id_factura = f.id_factura;
+        
+        
+-- check 1
+USE taller_mecanico;
+
+SHOW FULL TABLES
+WHERE table_type = 'VIEW';
+
+-- check 2
+SELECT COUNT(*) AS total_vistas
+FROM information_schema.views
+WHERE table_schema = 'taller_mecanico';
+
+-- check 3
+SELECT
+    table_name,
+    algorithm,
+    security_type
+FROM information_schema.views
+WHERE table_schema = 'taller_mecanico'
+ORDER BY table_name;
+
+-- check 4
+SELECT
+    table_name,
+    COUNT(*) AS cantidad_columnas
+FROM information_schema.columns
+WHERE table_schema = 'taller_mecanico'
+  AND table_name IN (
+      'vw_precios_venta_vigentes',
+      'vw_historial_vehiculo',
+      'vw_ordenes_mecanico',
+      'vw_facturas_estado_cobro'
+  )
+GROUP BY table_name
+ORDER BY table_name;
+
+-- check 5
+SELECT
+    table_name,
+    column_name
+FROM information_schema.columns
+WHERE table_schema = 'taller_mecanico'
+  AND table_name LIKE 'vw_%'
+  AND column_name = 'costo_base';
+  
+-- check 6
+SELECT * FROM vw_precios_venta_vigentes LIMIT 5;
+SELECT * FROM vw_historial_vehiculo LIMIT 5;
+SELECT * FROM vw_ordenes_mecanico LIMIT 5;
+SELECT * FROM vw_facturas_estado_cobro LIMIT 5;
+
+-- check 7
+SHOW CREATE VIEW vw_facturas_estado_cobro;
